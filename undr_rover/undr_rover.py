@@ -3,14 +3,19 @@
 """ Unmapped primer directed read overlap variant caller. """
 
 from argparse import ArgumentParser
-from Bio import SeqIO
+from Bio import (pairwise2, SeqIO)
 from itertools import (izip, chain, repeat)
 from pyfaidx import Fasta
 import csv
+import datetime
 import logging
 import sys
 
 DEFAULT_KMER_THRESHOLD = 0
+DEFAULT_PROPORTION_THRESHOLD = 0.05
+DEFAULT_ABSOLUTE_THRESHOLD = 2
+OUTPUT_HEADER = '\t'.join(["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", \
+    "FILTER", "INFO"])
 
 def parse_args():
     """ Find variants from fastqs via a mapping-free approach."""
@@ -25,6 +30,20 @@ def parse_args():
         default=DEFAULT_KMER_THRESHOLD, \
         help='K-mer length. If set to zero, k-mer test is not performed by \
         undr rover. Defaults to {}'.format(DEFAULT_KMER_THRESHOLD))
+    parser.add_argument('--proportionthresh', metavar='N', type=float, \
+        default=DEFAULT_PROPORTION_THRESHOLD, \
+        help='Keep variants which appear in this proportion of the read pairs '
+             'for a given target region, and bin otherwise. '
+             'Defaults to {}.'.format(DEFAULT_PROPORTION_THRESHOLD))
+    parser.add_argument('--absthresh', metavar='N', type=int, \
+        default=DEFAULT_ABSOLUTE_THRESHOLD, \
+        help='Only keep variants which appear in at least this many \
+        read pairs. ' \
+        'Defaults to {}.'.format(DEFAULT_ABSOLUTE_THRESHOLD))
+    parser.add_argument('--qualthresh', metavar='N', type=int, \
+        help='Minimum base quality score (phred).')
+    parser.add_argument('--out', metavar='FILE', type=str, \
+        required=True, help='Name of output file containing called variants.')
     parser.add_argument('--log', metavar='FILE', type=str, \
         help='Logs progress in specified file, defaults to stdout.')
     parser.add_argument('--reference', metavar='FILE', type=str, \
@@ -52,12 +71,21 @@ def make_base_sequence(name, bases, qualities):
     if len(bases) <= len(qualities):
         return [Base(b, q) for (b, q) in izip(bases, qualities)]
     else:
-        logging.warning("In read {} fewer quality scores {} than bases {}" \
-            .format(name, len(qualities), len(bases)))
+        logging.warning("In read {}, fewer quality scores ({}) than bases \
+            ({}).".format(name, len(qualities), len(bases)))
         # we have fewer quality scores than bases
         # pad the end with 0 scores
         return [Base(b, q) for (b, q) in izip(bases, chain(qualities, \
             repeat(0)))]
+
+def reverse_complement(sequence):
+    """ Return the reverse complement of a DNA string."""
+    complementary_bases = {"A":"T", "T":"A", "G":"C", "C":"G", "N":"N"}
+    rc_bases = []
+    for base in sequence:
+        rc_bases.append(complementary_bases[str(base)])
+    rc_seq = "".join([b for b in rc_bases])
+    return rc_seq[::-1]
 
 class Base(object):
     """ A DNA base paired with its quality score."""
@@ -76,6 +104,128 @@ class Base(object):
     def __hash__(self):
         return hash(self.as_tuple)
 
+class SNV(object):
+    """ Single nucleotide variant. Bases are represented as DNA strings."""
+    def __init__(self, chrsm, pos, ref_base, seq_base):
+        self.chrsm = chrsm
+        self.pos = pos
+        self.ref_base = ref_base
+        self.seq_base = seq_base
+        self.qual = '.'
+        self.filter_reason = None
+        self.info = []
+    def __str__(self):
+        return "S: {} {} {} {}".format(self.chrsm, self.pos, self.ref_base, \
+            self.seq_base)
+    def __repr__(self):
+        return str(self)
+    def as_tuple(self):
+        """ Return information about the SNV as a 4-tuple."""
+        return (self.chrsm, self.pos, self.ref_base, self.seq_base)
+    def __hash__(self):
+        return hash(self.as_tuple())
+    def __eq__(self, other):
+        return self.as_tuple() == other.as_tuple()
+    def ref(self):
+        """ REF base."""
+        return self.ref_base
+    def alt(self):
+        """ ALT base."""
+        return self.seq_base
+    def fil(self):
+        """ Return "PASS" if the SNV is not filtered, or the reason for
+        being discarded otherwise."""
+        if self.filter_reason is None:
+            return "PASS"
+        else:
+            return self.filter_reason[1:]
+    def position(self):
+        """ SNV POS."""
+        return self.pos
+
+class Insertion(object):
+    """ Insertion. Bases are represented as DNA strings."""
+    def __init__(self, chrsm, pos, inserted_bases, context):
+        self.chrsm = chrsm
+        self.pos = pos
+        self.inserted_bases = inserted_bases
+        self.qual = '.'
+        self.filter_reason = None
+        self.info = []
+        self.context = context
+    def __str__(self):
+        return "I: {} {} {}".format(self.chrsm, self.pos, self.inserted_bases)
+    def __repr__(self):
+        return str(self)
+    def as_tuple(self):
+        """ Return information about the insertion as a 3-tuple."""
+        return (self.chrsm, self.pos, self.inserted_bases)
+    def __hash__(self):
+        return hash(self.as_tuple())
+    def __eq__(self, other):
+        return self.as_tuple() == other.as_tuple()
+    def ref(self):
+        """ REF base."""
+        return self.context
+    def alt(self):
+        """ ALT (inserted) bases."""
+        return self.context + self.inserted_bases
+    def fil(self):
+        """ Return "PASS" if the Insertion is not filtered, or the reason for
+        being discarded otherwise."""
+        if self.filter_reason is None:
+            return "PASS"
+        else:
+            return self.filter_reason[1:]
+    def position(self):
+        """ Insertion POS."""
+        return self.pos - 1
+
+class Deletion(object):
+    """ Deletion. Bases are represented as DNA strings."""
+    def __init__(self, chrsm, pos, deleted_bases, context):
+        self.chrsm = chrsm
+        self.pos = pos
+        self.deleted_bases = deleted_bases
+        self.qual = '.'
+        self.filter_reason = None
+        self.info = []
+        self.context = context
+    def __str__(self):
+        return "D: {} {} {}".format(self.chrsm, self.pos, self.deleted_bases)
+    def __repr__(self):
+        return str(self)
+    def as_tuple(self):
+        """ Return infromation about the deletion as a 3-tuple."""
+        return (self.chrsm, self.pos, self.deleted_bases)
+    def __hash__(self):
+        return hash(self.as_tuple())
+    def __eq__(self, other):
+        return self.as_tuple() == other.as_tuple()
+    def ref(self):
+        """ REF (deleted) bases."""
+        return self.context + self.deleted_bases
+    def alt(self):
+        """ ALT base."""
+        return self.context
+    def fil(self):
+        """ Return "PASS" if the Deletion is not filtered, or the reason for
+        being discarded otherwise."""
+        if self.filter_reason is None:
+            return "PASS"
+        else:
+            return self.filter_reason[1:]
+    def position(self):
+        """ Deletion POS."""
+        return self.pos - 1
+
+def read_variants(args, chrsm, read, start, insert_seq):
+    """Find all the variants in a single read (SNVs, Insertions, Deletions)."""
+    alignment = pairwise2.align.globalxx(''.join([b.base for b in read]), \
+        str(insert_seq), penalize_end_gaps = (False, False), one_alignment_only = True)[0]
+    if alignment[2] < len(insert_seq):
+        print alignment
+
 def initialise_blocks(args):
     """ Create blocks, initially containing block coordinates, primer sequences
     and an empty dictionary to which reads pairs will be added. The blocks
@@ -91,9 +241,9 @@ def initialise_blocks(args):
         ref_sequence = reference[block[0]][int(block[1]) - 1:int(block[2])]
         # Actual block, for which the key is the first 20 bases of the forward
         # primer.
-        blocks[primer_sequences[block[3]][:20]] = [block[1], block[2], {}, \
-            ref_sequence, block[3], block[4], primer_sequences[block[3]], \
-            primer_sequences[block[4]]]
+        blocks[primer_sequences[block[3]][:20]] = [block[0], block[1], \
+        block[2], {}, ref_sequence, block[3], block[4], \
+        primer_sequences[block[3]], primer_sequences[block[4]]]
         # Reverse primer (not an actual block), contains the key for the forward
         # primer.
         blocks[primer_sequences[block[4]][:20]] = [primer_sequences[block[4]], \
@@ -107,35 +257,82 @@ def complete_blocks(args, blocks):
             read_bases = str(read.seq)
             primer_key = read_bases[:20]
             if primer_key in blocks:
-                if len(blocks[primer_key]) == 8:
+                if len(blocks[primer_key]) == 9:
                     # Forward primer matched.
-                    if blocks[primer_key][6] == read_bases[:len(blocks\
-                        [primer_key][6])]:
-                        if read.id not in blocks[primer_key][2]:
-                            blocks[primer_key][2][read.id] = [read]
+                    fseq = blocks[primer_key][7]
+                    if fseq == read_bases[:len(fseq)]:
+                        if read.id not in blocks[primer_key][3]:
+                            blocks[primer_key][3][read.id] = [read, 0]
                         else:
-                            blocks[primer_key][2][read.id].append(read)
+                            blocks[primer_key][3][read.id][0] = read
                 elif len(blocks[primer_key]) == 2:
                     # Reverse primer matched.
-                    if blocks[primer_key][0] == read_bases[:len(blocks\
-                        [primer_key][0])]:
+                    rseq = blocks[primer_key][0]
+                    if rseq == read_bases[:len(rseq)]:
                         forward_key = blocks[primer_key][1]
-                        if read.id not in blocks[forward_key][2]:
-                            blocks[forward_key][2][read.id] = [read]
+                        if read.id not in blocks[forward_key][3]:
+                            blocks[forward_key][3][read.id] = [0, read]
                         else:
-                            blocks[forward_key][2][read.id].append(read)
+                            blocks[forward_key][3][read.id][1] = read
     # For the next stage, we take only the actual blocks.
-    return [b[:4] for b in blocks.values() if len(b) > 2]
+    return [b[:5] for b in blocks.values() if len(b) > 2]
 
-def process_blocks(args, blocks):
+def process_blocks(args, blocks, vcf_file):
     """ Variant calling stage. Process blocks one at a time and call variants
     for each block."""
+    coverage_info = []
     for block_info in blocks:
-        count = 0
-        for x in block_info[2].values():
-            if len(x) == 2:
-                count += 1
-        print block_info[0], count
+        block_vars = []
+        num_pairs = 0
+        chrsm, start, end, reads, insert_seq = block_info[:5]
+        start = int(start)
+        end = int(end)
+        logging.info("Processing block chr: {}, start: {}, end: {}"\
+            .format(chrsm, start, end))
+        for read_pair in reads.values():
+            if len(read_pair) == 2 and 0 not in read_pair:
+                num_pairs += 1
+                read1, read2 = read_pair
+                read1_bases = make_base_sequence(read1.id, read1.seq, \
+                    read1.letter_annotations['phred_quality'])
+                read2_bases = make_base_sequence(read2.id, reverse_complement(\
+                    read2.seq), read2.letter_annotations['phred_quality'])
+                variants1 = read_variants(args, chrsm, read1_bases, start, \
+                    insert_seq)
+                variants2 = read_variants(args, chrsm, read2_bases, start, \
+                    insert_seq)
+                #set_variants1, set_variants2 = set(variants1), set(variants2)
+
+                # find the variants each read in the pair share in common
+                #same_variants = set_variants1.intersection(set_variants2)
+
+        logging.info("Number of read pairs in block: {}".format(num_pairs))
+
+def write_metadata(args, vcf_file):
+    """ Write the opening lines of metadata to the vcf file."""
+    vcf_file.write("##fileformat=VCFv4.2" + '\n')
+    today = datetime.date.today()
+    vcf_file.write("##fileDate=" + str(today)[:4] + str(today)[5:7] + \
+        str(today)[8:] + '\n')
+    vcf_file.write("##source=ROVER-PCR Variant Caller" + '\n')
+    vcf_file.write("##INFO=<ID=Sample,Number=1,Type=String,Description=\
+\"Sample Name\">" + '\n')
+    vcf_file.write("##INFO=<ID=NV,Number=1,Type=Float,Description=\
+\"Number of read pairs with variant\">" + '\n')
+    vcf_file.write("##INFO=<ID=NP,Number=1,Type=Float,Description=\
+\"Number of read pairs at POS\">" + '\n')
+    vcf_file.write("##INFO=<ID=PCT,Number=1,Type=Float,Description=\
+\"Percentage of read pairs at POS with variant\">" + '\n')
+    if args.qualthresh:
+        vcf_file.write("##FILTER=<ID=qlt,Description=\"Variant has phred \
+quality score below " + str(args.qualthresh) + "\">" + '\n')
+    if args.absthresh:
+        vcf_file.write("##FILTER=<ID=at,Description=\"Variant does not appear \
+in at least " + str(args.absthresh) + " read pairs\">" + '\n')
+    if args.proportionthresh:
+        vcf_file.write("##FILTER=<ID=pt,Descroption=\"Variant does not appear \
+in at least " + str(args.proportionthresh*100) \
++ "% of read pairs for the given region\">" + '\n')
 
 def main():
     """ Main function."""
@@ -148,9 +345,12 @@ def main():
         format='%(asctime)s %(message)s', datefmt='%a, %d %b %Y %H:%M:%S')
     logging.info('Program started.')
     logging.info('Command line: {0}'.format(' '.join(sys.argv)))
-    blocks = initialise_blocks(args)
-    final_blocks = complete_blocks(args, blocks)
-    process_blocks(args, final_blocks)
+    with open(args.out, 'w') as vcf_file:
+        write_metadata(args, vcf_file)
+        vcf_file.write(OUTPUT_HEADER + '\n')
+        blocks = initialise_blocks(args)
+        final_blocks = complete_blocks(args, blocks)
+        process_blocks(args, final_blocks, vcf_file)
 
 if __name__ == '__main__':
     main()
