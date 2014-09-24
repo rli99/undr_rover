@@ -5,11 +5,14 @@
 from argparse import ArgumentParser
 from Bio import (pairwise2, SeqIO)
 from itertools import (izip, chain, repeat)
+from operator import itemgetter
 from pyfaidx import Fasta
 import csv
 import datetime
 import logging
+import os
 import sys
+import vcf
 
 DEFAULT_KMER_THRESHOLD = 0
 DEFAULT_PROPORTION_THRESHOLD = 0.05
@@ -42,12 +45,17 @@ def parse_args():
         'Defaults to {}.'.format(DEFAULT_ABSOLUTE_THRESHOLD))
     parser.add_argument('--qualthresh', metavar='N', type=int, \
         help='Minimum base quality score (phred).')
+    parser.add_argument('--reference', metavar='FILE', type=str, \
+        help='Reference sequences in Fasta format.')
+    parser.add_argument('--id_info', type=str, \
+    help='File containing rs ID information.')
     parser.add_argument('--out', metavar='FILE', type=str, \
         required=True, help='Name of output file containing called variants.')
     parser.add_argument('--log', metavar='FILE', type=str, \
         help='Logs progress in specified file, defaults to stdout.')
-    parser.add_argument('--reference', metavar='FILE', type=str, \
-        help='Reference sequences in Fasta format.')
+    parser.add_argument('--coverdir', required=False, \
+        help='Directory to write coverage files, defaults to current working \
+        directory.')
     parser.add_argument('fastqs', nargs='+', type=str, \
         help='Fastq files containing reads.')
     return parser.parse_args()
@@ -86,6 +94,12 @@ def reverse_complement(sequence):
         rc_bases.append(complementary_bases[str(base)])
     rc_seq = "".join([b for b in rc_bases])
     return rc_seq[::-1]
+
+def nts(none_string):
+    """ Turns None into an empty string."""
+    if none_string is None:
+        return ''
+    return str(none_string)
 
 class Base(object):
     """ A DNA base paired with its quality score."""
@@ -223,8 +237,8 @@ def read_variants(args, chrsm, read, start, insert_seq):
     """Find all the variants in a single read (SNVs, Insertions, Deletions)."""
     result = []
     alignment = pairwise2.align.globalxx(''.join([b.base for b in read]), \
-        str(insert_seq), penalize_end_gaps = (False, False), \
-        one_alignment_only = True)[0]
+        str(insert_seq), penalize_end_gaps=(False, False), \
+        one_alignment_only=True)[0]
     #if alignment[2] < len(insert_seq):
     #    print alignment
     return result
@@ -256,6 +270,13 @@ def initialise_blocks(args):
 def complete_blocks(args, blocks):
     """ Organise reads into blocks."""
     for fastq_file in args.fastqs:
+        base = os.path.basename(fastq_file)
+        sample = base.split('_')
+        if len(sample) > 0:
+            sample = '_'.join(sample[:3])
+        else:
+            exit('Cannot deduce sample name from fastq filename {}'.\
+                format(fastq_file))
         for read in SeqIO.parse(fastq_file, 'fastq'):
             read_bases = str(read.seq)
             primer_key = read_bases[:20]
@@ -266,7 +287,7 @@ def complete_blocks(args, blocks):
                     if fseq == read_bases[:len(fseq)]:
                         if read.id not in blocks[primer_key][3]:
                             blocks[primer_key][3][read.id] = [read, 0, \
-                            len(fseq), 0]
+                            len(fseq), 0, sample]
                         else:
                             blocks[primer_key][3][read.id][0] = read
                             blocks[primer_key][3][read.id][2] = len(fseq)
@@ -277,14 +298,14 @@ def complete_blocks(args, blocks):
                         forward_key = blocks[primer_key][1]
                         if read.id not in blocks[forward_key][3]:
                             blocks[forward_key][3][read.id] = [0, read, \
-                            0, len(rseq)]
+                            0, len(rseq), sample]
                         else:
                             blocks[forward_key][3][read.id][1] = read
                             blocks[forward_key][3][read.id][3] = len(rseq)
     # For the next stage, we take only the actual blocks.
     return [b[:5] for b in blocks.values() if len(b) > 2]
 
-def process_blocks(args, blocks, vcf_file):
+def process_blocks(args, blocks, id_info, vcf_file):
     """ Variant calling stage. Process blocks one at a time and call variants
     for each block."""
     coverage_info = []
@@ -299,8 +320,7 @@ def process_blocks(args, blocks, vcf_file):
         for read_pair in reads.values():
             if 0 not in read_pair:
                 num_pairs += 1
-                read1, read2, fprimerlen, rprimerlen = read_pair
-
+                read1, read2, fprimerlen, rprimerlen, sample = read_pair
                 forward_bases = read1.seq[fprimerlen:]
                 reverse_bases = read2.seq[rprimerlen:]
 
@@ -311,8 +331,11 @@ def process_blocks(args, blocks, vcf_file):
                 read2_bases = make_base_sequence(read2.id, reverse_complement(\
                     reverse_bases), read2.letter_annotations['phred_quality'])
 
-                #print ''.join([b.base for b in read1_bases])[:20], insert_seq[:20]
-                print ''.join([b.base for b in read2_bases])[:-20:-1], insert_seq[:-20:-1]
+                #print ''.join([b.base for b in read1_bases])[:20], \
+                #insert_seq[:20]
+                #print ''.join([b.base for b in read2_bases])[:-20:-1], \
+                #insert_seq[:-20:-1]
+
                 # read variants for the forward read
                 #variants1 = read_variants(args, chrsm, read1_bases, start, \
                     #insert_seq)
@@ -325,6 +348,57 @@ def process_blocks(args, blocks, vcf_file):
                 #same_variants = set_variants1.intersection(set_variants2)
 
         logging.info("Number of read pairs in block: {}".format(num_pairs))
+
+        for var in block_vars:
+            num_vars = block_vars[var]
+            proportion = float(num_vars) / num_pairs
+            var.info.append("Sample=" + str(sample))
+            var.info.append("NV=" + str(num_vars))
+            var.info.append("NP=" + str(num_pairs))
+            var.info.append("PCT=" + str('{:.2%}'.format(proportion)))
+            if num_vars < args.absthresh:
+                var.filter_reason = ''.join([nts(var.filter_reason), ";at"])
+            if proportion < args.proportionthresh:
+                var.filter_reason = ''.join([nts(var.filter_reason), ";pt"])
+            write_variant(vcf_file, var, id_info, args)
+
+        coverage_info.append((chrsm, start, end, num_pairs))
+
+    coverage_filename = sample + '.coverage'
+    if args.coverdir is not None:
+        coverage_filename = os.path.join(args.coverdir, coverage_filename)
+    with open(coverage_filename, 'w') as coverage_file:
+        write_coverage_data(args, coverage_file, coverage_info)
+
+def write_variant(vcf_file, variant, id_info, args):
+    """ Writes variant to vcf_file, while also finding the relevant rs number
+    from dbsnp if applicable."""
+    info = 0
+    record_info = None
+    # If the variant is deemed a "PASS", find the relevant rs number from dbsnp.
+    if variant.fil() == "PASS" and args.id_info:
+        for record in id_info.fetch(variant.chrsm, variant.position(), variant.\
+            position() + max(len(variant.ref()), len(variant.alt())) + 1):
+            if record.POS == variant.position() and record.REF == \
+            variant.ref() and (variant.alt() in record.ALT):
+                info = 1
+                record_info = record
+    if info == 1:
+        vcf_file.write('\t'.join([variant.chrsm, str(variant.position()), \
+str(record_info.ID), variant.ref(), variant.alt(), variant.qual, variant\
+.fil(), ';'.join(variant.info)]) + '\n')
+    else:
+        vcf_file.write('\t'.join([variant.chrsm, str(variant.position()), \
+'.', variant.ref(), variant.alt(), variant.qual, variant.fil(), ';'\
+.join(variant.info)]) + '\n')
+
+def write_coverage_data(args, coverage_file, coverage_info):
+    """ Write coverage information to the coverage files."""
+    coverage_file.write('chr\tblock_start\tblock_end\tnum_pairs\n')
+    for chrsm, start, end, num_pairs in sorted(coverage_info, \
+        key=itemgetter(3)):
+        coverage_file.write('{}\t{}\t{}\t{}\n'.format(chrsm, start, \
+            end, num_pairs))
 
 def write_metadata(args, vcf_file):
     """ Write the opening lines of metadata to the vcf file."""
@@ -362,13 +436,15 @@ def main():
     logging.basicConfig(filename=logfile, level=logging.DEBUG, filemode='w', \
         format='%(asctime)s %(message)s', datefmt='%a, %d %b %Y %H:%M:%S')
     logging.info('Program started.')
-    logging.info('Command line: {0}'.format(' '.join(sys.argv)))
+    logging.info('Command line: {}'.format(' '.join(sys.argv)))
     with open(args.out, 'w') as vcf_file:
+        if args.id_info:
+            vcf_reader = vcf.Reader(filename=args.id_info)
         write_metadata(args, vcf_file)
         vcf_file.write(OUTPUT_HEADER + '\n')
         blocks = initialise_blocks(args)
         final_blocks = complete_blocks(args, blocks)
-        process_blocks(args, final_blocks, vcf_file)
+        process_blocks(args, final_blocks, vcf_reader, vcf_file)
 
 if __name__ == '__main__':
     main()
