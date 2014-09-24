@@ -221,10 +221,13 @@ class Deletion(object):
 
 def read_variants(args, chrsm, read, start, insert_seq):
     """Find all the variants in a single read (SNVs, Insertions, Deletions)."""
+    result = []
     alignment = pairwise2.align.globalxx(''.join([b.base for b in read]), \
-        str(insert_seq), penalize_end_gaps = (False, False), one_alignment_only = True)[0]
-    if alignment[2] < len(insert_seq):
-        print alignment
+        str(insert_seq), penalize_end_gaps = (False, False), \
+        one_alignment_only = True)[0]
+    #if alignment[2] < len(insert_seq):
+    #    print alignment
+    return result
 
 def initialise_blocks(args):
     """ Create blocks, initially containing block coordinates, primer sequences
@@ -262,18 +265,22 @@ def complete_blocks(args, blocks):
                     fseq = blocks[primer_key][7]
                     if fseq == read_bases[:len(fseq)]:
                         if read.id not in blocks[primer_key][3]:
-                            blocks[primer_key][3][read.id] = [read, 0]
+                            blocks[primer_key][3][read.id] = [read, 0, \
+                            len(fseq), 0]
                         else:
                             blocks[primer_key][3][read.id][0] = read
+                            blocks[primer_key][3][read.id][2] = len(fseq)
                 elif len(blocks[primer_key]) == 2:
                     # Reverse primer matched.
                     rseq = blocks[primer_key][0]
                     if rseq == read_bases[:len(rseq)]:
                         forward_key = blocks[primer_key][1]
                         if read.id not in blocks[forward_key][3]:
-                            blocks[forward_key][3][read.id] = [0, read]
+                            blocks[forward_key][3][read.id] = [0, read, \
+                            0, len(rseq)]
                         else:
                             blocks[forward_key][3][read.id][1] = read
+                            blocks[forward_key][3][read.id][3] = len(rseq)
     # For the next stage, we take only the actual blocks.
     return [b[:5] for b in blocks.values() if len(b) > 2]
 
@@ -290,17 +297,28 @@ def process_blocks(args, blocks, vcf_file):
         logging.info("Processing block chr: {}, start: {}, end: {}"\
             .format(chrsm, start, end))
         for read_pair in reads.values():
-            if len(read_pair) == 2 and 0 not in read_pair:
+            if 0 not in read_pair:
                 num_pairs += 1
-                read1, read2 = read_pair
-                read1_bases = make_base_sequence(read1.id, read1.seq, \
+                read1, read2, fprimerlen, rprimerlen = read_pair
+
+                forward_bases = read1.seq[fprimerlen:]
+                reverse_bases = read2.seq[rprimerlen:]
+
+                # make forward base sequence
+                read1_bases = make_base_sequence(read1.id, forward_bases, \
                     read1.letter_annotations['phred_quality'])
+                # make reverse base sequence
                 read2_bases = make_base_sequence(read2.id, reverse_complement(\
-                    read2.seq), read2.letter_annotations['phred_quality'])
-                variants1 = read_variants(args, chrsm, read1_bases, start, \
-                    insert_seq)
-                variants2 = read_variants(args, chrsm, read2_bases, start, \
-                    insert_seq)
+                    reverse_bases), read2.letter_annotations['phred_quality'])
+
+                #print ''.join([b.base for b in read1_bases])[:20], insert_seq[:20]
+                print ''.join([b.base for b in read2_bases])[:-20:-1], insert_seq[:-20:-1]
+                # read variants for the forward read
+                #variants1 = read_variants(args, chrsm, read1_bases, start, \
+                    #insert_seq)
+                # read variants for the reverse read
+                #variants2 = read_variants(args, chrsm, read2_bases, start, \
+                    #insert_seq)
                 #set_variants1, set_variants2 = set(variants1), set(variants2)
 
                 # find the variants each read in the pair share in common
