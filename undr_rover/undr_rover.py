@@ -120,12 +120,12 @@ class Base(object):
 
 class SNV(object):
     """ Single nucleotide variant. Bases are represented as DNA strings."""
-    def __init__(self, chrsm, pos, ref_base, seq_base):
+    def __init__(self, chrsm, pos, ref_base, seq_base, qual):
         self.chrsm = chrsm
         self.pos = pos
         self.ref_base = ref_base
         self.seq_base = seq_base
-        self.qual = '.'
+        self.qual = qual
         self.filter_reason = None
         self.info = []
     def __str__(self):
@@ -233,14 +233,58 @@ class Deletion(object):
         """ Deletion POS."""
         return self.pos - 1
 
-def read_variants(args, chrsm, read, start, insert_seq):
-    """Find all the variants in a single read (SNVs, Insertions, Deletions)."""
+def read_fvariants(args, chrsm, read, pos, insert_seq):
+    """Find all the variants in a forward read (SNVs, Insertions, Deletions)."""
     result = []
-    alignment = pairwise2.align.globalxx(''.join([b.base for b in read]), \
-        str(insert_seq), penalize_end_gaps=(False, False), \
-        one_alignment_only=True)[0]
-    #if alignment[2] < len(insert_seq):
-    #    print alignment
+
+    while insert_seq and read:
+        if insert_seq[0] == read[0].base:
+            insert_seq = insert_seq[1:]
+            read = read[1:]
+            pos += 1
+        else:
+            if len(insert_seq) > 1 and len(read) > 1:
+                if insert_seq[1] != read[1].base:
+                    # indel
+                    insert_seq = insert_seq[1:]
+                    read = read[1:]
+                    pos += 1
+                    continue
+            snv = SNV(chrsm, pos, insert_seq[0], read[0].base, read[0].qual)
+            if not ((args.qualthresh is None) or (read[0].qual < \
+                args.qualthresh)):
+                snv.filter_reason = ''.join([nts(snv.filter_reason), ";qlt"])
+            result.append(snv)
+            insert_seq = insert_seq[1:]
+            read = read[1:]
+            pos += 1
+    return result
+
+def read_rvariants(args, chrsm, read, pos, insert_seq):
+    """Find all the variants in a reverse read (SNVs, Insertions, Deletions)."""
+    result = []
+
+    while insert_seq and read:
+        if insert_seq[-1] == read[-1].base:
+            insert_seq = insert_seq[:-1]
+            read = read[:-1]
+            pos -= 1
+        else:
+            if len(insert_seq) > 1 and len(read) > 1:
+                if insert_seq[-2] != read[-2].base:
+                    # indel
+                    insert_seq = insert_seq[:-1]
+                    read = read[:-1]
+                    pos -= 1
+                    continue
+            snv = SNV(chrsm, pos, insert_seq[-1], read[-1].base, read[-1].qual)
+            if not ((args.qualthresh is None) or (read[-1].qual < \
+                args.qualthresh)):
+                snv.filter_reason = ''.join([nts(snv.filter_reason), ";qlt"])
+            result.append(snv)
+            insert_seq = insert_seq[:-1]
+            read = read[:-1]
+            pos -= 1
     return result
 
 def initialise_blocks(args):
@@ -259,7 +303,7 @@ def initialise_blocks(args):
         # Actual block, for which the key is the first 20 bases of the forward
         # primer.
         blocks[primer_sequences[block[3]][:20]] = [block[0], block[1], \
-        block[2], {}, ref_sequence, block[3], block[4], \
+        block[2], {}, str(ref_sequence), block[3], block[4], \
         primer_sequences[block[3]], primer_sequences[block[4]]]
         # Reverse primer (not an actual block), contains the key for the forward
         # primer.
@@ -310,7 +354,7 @@ def process_blocks(args, blocks, id_info, vcf_file):
     for each block."""
     coverage_info = []
     for block_info in blocks:
-        block_vars = []
+        block_vars = {}
         num_pairs = 0
         chrsm, start, end, reads, insert_seq = block_info[:5]
         start = int(start)
@@ -331,21 +375,24 @@ def process_blocks(args, blocks, id_info, vcf_file):
                 read2_bases = make_base_sequence(read2.id, reverse_complement(\
                     reverse_bases), read2.letter_annotations['phred_quality'])
 
-                #print ''.join([b.base for b in read1_bases])[:20], \
-                #insert_seq[:20]
-                #print ''.join([b.base for b in read2_bases])[:-20:-1], \
-                #insert_seq[:-20:-1]
-
                 # read variants for the forward read
-                #variants1 = read_variants(args, chrsm, read1_bases, start, \
-                    #insert_seq)
+                variants1 = read_fvariants(args, chrsm, read1_bases, start, \
+                    insert_seq)
                 # read variants for the reverse read
-                #variants2 = read_variants(args, chrsm, read2_bases, start, \
-                    #insert_seq)
-                #set_variants1, set_variants2 = set(variants1), set(variants2)
+                variants2 = read_rvariants(args, chrsm, read2_bases, end, \
+                    insert_seq)
+                set_variants1, set_variants2 = set(variants1), set(variants2)
 
                 # find the variants each read in the pair share in common
-                #same_variants = set_variants1.intersection(set_variants2)
+                same_variants = set_variants1.intersection(set_variants2)
+
+                for var in same_variants:
+                    # only consider variants within the bounds of the block
+                    if var.pos >= start and var.pos <= end:
+                        if var in block_vars:
+                            block_vars[var] += 1
+                        else:
+                            block_vars[var] = 1
 
         logging.info("Number of read pairs in block: {}".format(num_pairs))
 
@@ -385,11 +432,11 @@ def write_variant(vcf_file, variant, id_info, args):
                 record_info = record
     if info == 1:
         vcf_file.write('\t'.join([variant.chrsm, str(variant.position()), \
-str(record_info.ID), variant.ref(), variant.alt(), variant.qual, variant\
+str(record_info.ID), variant.ref(), variant.alt(), str(variant.qual), variant\
 .fil(), ';'.join(variant.info)]) + '\n')
     else:
         vcf_file.write('\t'.join([variant.chrsm, str(variant.position()), \
-'.', variant.ref(), variant.alt(), variant.qual, variant.fil(), ';'\
+'.', variant.ref(), variant.alt(), str(variant.qual), variant.fil(), ';'\
 .join(variant.info)]) + '\n')
 
 def write_coverage_data(args, coverage_file, coverage_info):
@@ -406,7 +453,7 @@ def write_metadata(args, vcf_file):
     today = datetime.date.today()
     vcf_file.write("##fileDate=" + str(today)[:4] + str(today)[5:7] + \
         str(today)[8:] + '\n')
-    vcf_file.write("##source=ROVER-PCR Variant Caller" + '\n')
+    vcf_file.write("##source=UNDR ROVER" + '\n')
     vcf_file.write("##INFO=<ID=Sample,Number=1,Type=String,Description=\
 \"Sample Name\">" + '\n')
     vcf_file.write("##INFO=<ID=NV,Number=1,Type=Float,Description=\
@@ -422,7 +469,7 @@ quality score below " + str(args.qualthresh) + "\">" + '\n')
         vcf_file.write("##FILTER=<ID=at,Description=\"Variant does not appear \
 in at least " + str(args.absthresh) + " read pairs\">" + '\n')
     if args.proportionthresh:
-        vcf_file.write("##FILTER=<ID=pt,Descroption=\"Variant does not appear \
+        vcf_file.write("##FILTER=<ID=pt,Description=\"Variant does not appear \
 in at least " + str(args.proportionthresh*100) \
 + "% of read pairs for the given region\">" + '\n')
 
