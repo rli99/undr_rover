@@ -236,55 +236,17 @@ class Deletion(object):
 def read_fvariants(args, chrsm, read, pos, insert_seq):
     """Find all the variants in a forward read (SNVs, Insertions, Deletions)."""
     result = []
-
-    while insert_seq and read:
-        if insert_seq[0] == read[0].base:
-            insert_seq = insert_seq[1:]
-            read = read[1:]
-            pos += 1
-        else:
-            if len(insert_seq) > 1 and len(read) > 1:
-                if insert_seq[1] != read[1].base:
-                    # indel
-                    insert_seq = insert_seq[1:]
-                    read = read[1:]
-                    pos += 1
-                    continue
-            snv = SNV(chrsm, pos, insert_seq[0], read[0].base, read[0].qual)
-            if not ((args.qualthresh is None) or (read[0].qual < \
-                args.qualthresh)):
-                snv.filter_reason = ''.join([nts(snv.filter_reason), ";qlt"])
-            result.append(snv)
-            insert_seq = insert_seq[1:]
-            read = read[1:]
-            pos += 1
+    # Identical insert sequence and read, so there are no variants.
+    if insert_seq == (''.join([b.base for b in read]))[:len(insert_seq)]:
+        return result
     return result
 
 def read_rvariants(args, chrsm, read, pos, insert_seq):
     """Find all the variants in a reverse read (SNVs, Insertions, Deletions)."""
     result = []
-
-    while insert_seq and read:
-        if insert_seq[-1] == read[-1].base:
-            insert_seq = insert_seq[:-1]
-            read = read[:-1]
-            pos -= 1
-        else:
-            if len(insert_seq) > 1 and len(read) > 1:
-                if insert_seq[-2] != read[-2].base:
-                    # indel
-                    insert_seq = insert_seq[:-1]
-                    read = read[:-1]
-                    pos -= 1
-                    continue
-            snv = SNV(chrsm, pos, insert_seq[-1], read[-1].base, read[-1].qual)
-            if not ((args.qualthresh is None) or (read[-1].qual < \
-                args.qualthresh)):
-                snv.filter_reason = ''.join([nts(snv.filter_reason), ";qlt"])
-            result.append(snv)
-            insert_seq = insert_seq[:-1]
-            read = read[:-1]
-            pos -= 1
+    # Identical insert sequence and read, so there are no variants.
+    if insert_seq == (''.join([b.base for b in read]))[-1 * len(insert_seq):]:
+        return result
     return result
 
 def initialise_blocks(args):
@@ -368,26 +330,26 @@ def process_blocks(args, blocks, id_info, vcf_file):
                 forward_bases = read1.seq[fprimerlen:]
                 reverse_bases = read2.seq[rprimerlen:]
 
-                # make forward base sequence
+                # Make forward base sequence.
                 read1_bases = make_base_sequence(read1.id, forward_bases, \
                     read1.letter_annotations['phred_quality'])
-                # make reverse base sequence
+                # Make reverse base sequence.
                 read2_bases = make_base_sequence(read2.id, reverse_complement(\
                     reverse_bases), read2.letter_annotations['phred_quality'])
 
-                # read variants for the forward read
+                # Read variants for the forward read.
                 variants1 = read_fvariants(args, chrsm, read1_bases, start, \
                     insert_seq)
-                # read variants for the reverse read
+                # Read variants for the reverse read.
                 variants2 = read_rvariants(args, chrsm, read2_bases, end, \
                     insert_seq)
-                set_variants1, set_variants2 = set(variants1), set(variants2)
 
-                # find the variants each read in the pair share in common
+                # Find the variants each read in the pair share in common.
+                set_variants1, set_variants2 = set(variants1), set(variants2)
                 same_variants = set_variants1.intersection(set_variants2)
 
                 for var in same_variants:
-                    # only consider variants within the bounds of the block
+                    # Only consider variants within the bounds of the block.
                     if var.pos >= start and var.pos <= end:
                         if var in block_vars:
                             block_vars[var] += 1
@@ -480,8 +442,9 @@ def main():
         logfile = sys.stdout
     else:
         logfile = args.log
-    logging.basicConfig(filename=logfile, level=logging.DEBUG, filemode='w', \
-        format='%(asctime)s %(message)s', datefmt='%a, %d %b %Y %H:%M:%S')
+        logging.basicConfig(filename=logfile, level=logging.DEBUG, \
+            filemode='w', format='%(asctime)s %(message)s', \
+            datefmt='%a, %d %b %Y %H:%M:%S')
     logging.info('Program started.')
     logging.info('Command line: {}'.format(' '.join(sys.argv)))
     with open(args.out, 'w') as vcf_file:
