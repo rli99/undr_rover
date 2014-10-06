@@ -233,20 +233,26 @@ class Deletion(object):
         """ Deletion POS."""
         return self.pos - 1
 
-def read_fvariants(args, chrsm, read, pos, insert_seq):
+def read_fvariants(args, chrsm, read, pos, insert_seq, bases):
     """Find all the variants in a forward read (SNVs, Insertions, Deletions)."""
     result = []
     # Identical insert sequence and read, so there are no variants.
-    if insert_seq == (''.join([b.base for b in read]))[:len(insert_seq)]:
+    if insert_seq == bases[:len(insert_seq)]:
         return result
+    # Make forward base sequence.
+    read1_bases = make_base_sequence(read.id, bases, \
+        read.letter_annotations['phred_quality'])
     return result
 
-def read_rvariants(args, chrsm, read, pos, insert_seq):
+def read_rvariants(args, chrsm, read, pos, insert_seq, bases):
     """Find all the variants in a reverse read (SNVs, Insertions, Deletions)."""
     result = []
     # Identical insert sequence and read, so there are no variants.
-    if insert_seq == (''.join([b.base for b in read]))[-1 * len(insert_seq):]:
+    if insert_seq == bases[-1 * len(insert_seq):]:
         return result
+    # Make reverse base sequence.
+    read2_bases = make_base_sequence(read.id, reverse_complement(bases), \
+        read.letter_annotations['phred_quality'])
     return result
 
 def initialise_blocks(args):
@@ -330,19 +336,12 @@ def process_blocks(args, blocks, id_info, vcf_file):
                 forward_bases = read1.seq[fprimerlen:]
                 reverse_bases = read2.seq[rprimerlen:]
 
-                # Make forward base sequence.
-                read1_bases = make_base_sequence(read1.id, forward_bases, \
-                    read1.letter_annotations['phred_quality'])
-                # Make reverse base sequence.
-                read2_bases = make_base_sequence(read2.id, reverse_complement(\
-                    reverse_bases), read2.letter_annotations['phred_quality'])
-
                 # Read variants for the forward read.
-                variants1 = read_fvariants(args, chrsm, read1_bases, start, \
-                    insert_seq)
+                variants1 = read_fvariants(args, chrsm, read1, start, \
+                    insert_seq, str(forward_bases))
                 # Read variants for the reverse read.
-                variants2 = read_rvariants(args, chrsm, read2_bases, end, \
-                    insert_seq)
+                variants2 = read_rvariants(args, chrsm, read2, end, \
+                    insert_seq, reverse_complement(str(reverse_bases)))
 
                 # Find the variants each read in the pair share in common.
                 set_variants1, set_variants2 = set(variants1), set(variants2)
