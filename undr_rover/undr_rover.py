@@ -239,9 +239,57 @@ def read_fvariants(args, chrsm, read, pos, insert_seq, bases):
     # Identical insert sequence and read, so there are no variants.
     if insert_seq == bases[:len(insert_seq)]:
         return result
-    # Make forward base sequence.
-    read1_bases = make_base_sequence(read.id, bases, \
-        read.letter_annotations['phred_quality'])
+    alignment = pairwise2.align.globalms(insert_seq, bases, 4, -1, -4, -2, \
+        penalize_end_gaps=(False,False), one_alignment_only=True)[0]
+    aligned_insert, aligned_read = alignment[0], alignment[1]
+    aligned_insert_orig, aligned_read_orig = aligned_insert, aligned_read
+    context = '-'
+    while aligned_insert and aligned_read:
+        if aligned_insert[0] == aligned_read[0]:
+            context = aligned_insert[0]
+            aligned_insert = aligned_insert[1:]
+            aligned_read = aligned_read[1:]
+            pos += 1
+        else:
+            if not (aligned_insert[0] == '-' or aligned_read[0] == '-'):
+                snv = SNV(chrsm, pos, aligned_insert[0], aligned_read[0], '.')
+                result.append(snv)
+                context = aligned_insert[0]
+                aligned_insert = aligned_insert[1:]
+                aligned_read = aligned_read[1:]
+                pos += 1
+            elif aligned_insert[0] == '-':
+                insert = True
+                ins_length = 0
+                for base in aligned_insert:
+                    if base == '-' and insert:
+                        ins_length += 1
+                    else:
+                        insert = False
+                if ins_length >= len(aligned_insert):
+                    return result
+                insertion = Insertion(chrsm, pos, aligned_read\
+                    [:ins_length], context)
+                result.append(insertion)
+                aligned_read = aligned_read[ins_length:]
+                aligned_insert = aligned_insert[ins_length:]
+            elif aligned_read[0] == '-':
+                delete = True
+                del_length = 0
+                for base in aligned_read:
+                    if base == '-' and delete:
+                        del_length += 1
+                    else:
+                        delete = False
+                if del_length >= len(aligned_insert):
+                    return result
+                deletion = Deletion(chrsm, pos, aligned_insert\
+                    [:del_length], context)
+                result.append(deletion)
+                context = aligned_insert[del_length - 1]
+                aligned_insert = aligned_insert[del_length:]
+                aligned_read = aligned_read[del_length:]
+                pos += del_length
     return result
 
 def read_rvariants(args, chrsm, read, pos, insert_seq, bases):
@@ -250,9 +298,52 @@ def read_rvariants(args, chrsm, read, pos, insert_seq, bases):
     # Identical insert sequence and read, so there are no variants.
     if insert_seq == bases[-1 * len(insert_seq):]:
         return result
-    # Make reverse base sequence.
-    read2_bases = make_base_sequence(read.id, reverse_complement(bases), \
-        read.letter_annotations['phred_quality'])
+    alignment = pairwise2.align.globalms(insert_seq, bases, 4, -1, -4, -2, \
+        penalize_end_gaps=(False,False), one_alignment_only=True)[0]
+    aligned_insert, aligned_read = alignment[0], alignment[1]
+    while aligned_insert and aligned_read:
+        if aligned_insert[-1] == aligned_read[-1]:
+            aligned_insert = aligned_insert[:-1]
+            aligned_read = aligned_read[:-1]
+            pos -= 1
+        else:
+            if not (aligned_insert[-1] == '-' or aligned_read[-1] == '-'):
+                snv = SNV(chrsm, pos, aligned_insert[-1], aligned_read[-1], '.')
+                result.append(snv)
+                aligned_insert = aligned_insert[:-1]
+                aligned_read = aligned_read[:-1]
+                pos -= 1
+            elif aligned_insert[-1] == '-':
+                insert = True
+                ins_length = 0
+                for base in aligned_insert[::-1]:
+                    if base == '-' and insert:
+                        ins_length += 1
+                    else:
+                        insert = False
+                if ins_length >= len(aligned_insert):
+                    return result
+                insertion = Insertion(chrsm, pos + 1, aligned_read[-1 * \
+                    ins_length:], aligned_insert[-1 * ins_length - 1])
+                result.append(insertion)
+                aligned_read = aligned_read[:-1 * ins_length]
+                aligned_insert = aligned_insert[:-1 * ins_length]
+            elif aligned_read[-1] == '-':
+                delete = True
+                del_length = 0
+                for base in aligned_read[::-1]  :
+                    if base == '-' and delete:
+                        del_length += 1
+                    else:
+                        delete = False
+                if del_length >= len(aligned_insert):
+                    return result
+                deletion = Deletion(chrsm, pos, aligned_insert[-1 * \
+                    del_length:], aligned_insert[-1 * del_length - 1])
+                result.append(deletion)
+                aligned_insert = aligned_insert[:-1 * del_length]
+                aligned_read = aligned_read[:-1 * del_length]
+                pos -= del_length
     return result
 
 def initialise_blocks(args):
@@ -338,10 +429,11 @@ def process_blocks(args, blocks, id_info, vcf_file):
 
                 # Read variants for the forward read.
                 variants1 = read_fvariants(args, chrsm, read1, start, \
-                    insert_seq, str(forward_bases))
+                    insert_seq.upper(), str(forward_bases).upper())
                 # Read variants for the reverse read.
                 variants2 = read_rvariants(args, chrsm, read2, end, \
-                    insert_seq, reverse_complement(str(reverse_bases)))
+                    insert_seq.upper(), \
+                    reverse_complement(str(reverse_bases)).upper())
 
                 # Find the variants each read in the pair share in common.
                 set_variants1, set_variants2 = set(variants1), set(variants2)
