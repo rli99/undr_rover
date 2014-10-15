@@ -7,6 +7,7 @@ from Bio import (pairwise2, SeqIO)
 from itertools import (izip, chain, repeat)
 from operator import itemgetter
 from pyfaidx import Fasta
+import cProfile
 import csv
 import datetime
 import logging
@@ -14,6 +15,10 @@ import os
 import sys
 import vcf
 
+total_reads_count = 0
+skipped_reads_count = 0
+
+DEFAULT_PRIMER_BASES = 5
 DEFAULT_KMER_THRESHOLD = 0
 DEFAULT_PROPORTION_THRESHOLD = 0.05
 DEFAULT_ABSOLUTE_THRESHOLD = 2
@@ -29,6 +34,9 @@ def parse_args():
     parser.add_argument('--primer_sequences', metavar='FILE', type=str, \
         help='Primer base sequences as determined by a primer generating \
         program.')
+    parser.add_argument('--primer_bases', type=int, \
+        default=DEFAULT_PRIMER_BASES, \
+        help='Number of bases from primer region to use in gapped alignment.')
     parser.add_argument('--kmer_threshold', type=int, \
         default=DEFAULT_KMER_THRESHOLD, \
         help='K-mer length. If set to zero, k-mer test is not performed by \
@@ -233,17 +241,29 @@ class Deletion(object):
         """ Deletion POS."""
         return self.pos - 1
 
+READ_CONSTANT = 'M00267:48:000000000-A493W:1:1104:14461:10878'
+
 def read_fvariants(args, chrsm, read, pos, insert_seq, bases):
     """Find all the variants in a forward read (SNVs, Insertions, Deletions)."""
+    #if read.id != READ_CONSTANT:
+    #    return []
+    pos -= args.primer_bases
     result = []
+    global total_reads_count
+    global skipped_reads_count
     # Identical insert sequence and read, so there are no variants.
-    if insert_seq == bases[:len(insert_seq)]:
+    if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
+    bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
+        skipped_reads_count += 1
+        total_reads_count += 1
         return result
-    alignment = pairwise2.align.globalms(insert_seq, bases, 4, -1, -4, -2, \
-        penalize_end_gaps=(False,False), one_alignment_only=True)[0]
+    total_reads_count += 1
+    alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
+        penalize_end_gaps=(False,False), one_alignment_only=False)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
     aligned_insert_orig, aligned_read_orig = aligned_insert, aligned_read
     context = '-'
+    print aligned_insert, aligned_read
     while aligned_insert and aligned_read:
         if aligned_insert[0] == aligned_read[0]:
             context = aligned_insert[0]
@@ -294,13 +314,23 @@ def read_fvariants(args, chrsm, read, pos, insert_seq, bases):
 
 def read_rvariants(args, chrsm, read, pos, insert_seq, bases):
     """Find all the variants in a reverse read (SNVs, Insertions, Deletions)."""
+    #if read.id != READ_CONSTANT:
+    #    return []
+    pos += args.primer_bases
     result = []
+    global total_reads_count
+    global skipped_reads_count
     # Identical insert sequence and read, so there are no variants.
-    if insert_seq == bases[-1 * len(insert_seq):]:
+    if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
+    bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
+        skipped_reads_count += 1
+        total_reads_count += 1
         return result
-    alignment = pairwise2.align.globalms(insert_seq, bases, 4, -1, -4, -2, \
-        penalize_end_gaps=(False,False), one_alignment_only=True)[0]
+    total_reads_count += 1
+    alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
+        penalize_end_gaps=(False,False), one_alignment_only=False)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
+    print aligned_insert, aligned_read
     while aligned_insert and aligned_read:
         if aligned_insert[-1] == aligned_read[-1]:
             aligned_insert = aligned_insert[:-1]
@@ -338,7 +368,7 @@ def read_rvariants(args, chrsm, read, pos, insert_seq, bases):
                         delete = False
                 if del_length >= len(aligned_insert):
                     return result
-                deletion = Deletion(chrsm, pos, aligned_insert[-1 * \
+                deletion = Deletion(chrsm, pos - del_length + 1, aligned_insert[-1 * \
                     del_length:], aligned_insert[-1 * del_length - 1])
                 result.append(deletion)
                 aligned_insert = aligned_insert[:-1 * del_length]
@@ -358,7 +388,8 @@ def initialise_blocks(args):
     for primer in primer_info:
         primer_sequences[primer[0]] = primer[1]
     for block in block_coords:
-        ref_sequence = reference[block[0]][int(block[1]) - 1:int(block[2])]
+        ref_sequence = reference[block[0]][int(block[1]) - 1 - args.primer_bases:\
+        int(block[2]) + args.primer_bases]
         # Actual block, for which the key is the first 20 bases of the forward
         # primer.
         blocks[primer_sequences[block[3]][:20]] = [block[0], block[1], \
@@ -424,8 +455,8 @@ def process_blocks(args, blocks, id_info, vcf_file):
             if 0 not in read_pair:
                 num_pairs += 1
                 read1, read2, fprimerlen, rprimerlen, sample = read_pair
-                forward_bases = read1.seq[fprimerlen:]
-                reverse_bases = read2.seq[rprimerlen:]
+                forward_bases = read1.seq[fprimerlen - args.primer_bases:]
+                reverse_bases = read2.seq[rprimerlen - args.primer_bases:]
 
                 # Read variants for the forward read.
                 variants1 = read_fvariants(args, chrsm, read1, start, \
@@ -546,6 +577,7 @@ def main():
         blocks = initialise_blocks(args)
         final_blocks = complete_blocks(args, blocks)
         process_blocks(args, final_blocks, vcf_reader, vcf_file)
+        print skipped_reads_count * 100/float(total_reads_count)
 
 if __name__ == '__main__':
     main()
