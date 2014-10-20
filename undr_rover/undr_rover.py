@@ -4,10 +4,8 @@
 
 from argparse import ArgumentParser
 from Bio import (pairwise2, SeqIO)
-from itertools import (izip, chain, repeat)
 from operator import itemgetter
 from pyfaidx import Fasta
-import cProfile
 import csv
 import datetime
 import logging
@@ -15,10 +13,10 @@ import os
 import sys
 import vcf
 
-total_reads_count = 0
-skipped_reads_count = 0
+# total_reads_count = 0
+# skipped_reads_count = 0
 
-DEFAULT_PRIMER_BASES = 5
+DEFAULT_PRIMER_BASES = 3
 DEFAULT_KMER_THRESHOLD = 0
 DEFAULT_PROPORTION_THRESHOLD = 0.05
 DEFAULT_ABSOLUTE_THRESHOLD = 2
@@ -80,28 +78,10 @@ def get_primer_sequences(primer_sequences_file):
     with open(primer_sequences_file) as primer_sequences:
         return list(csv.reader(primer_sequences, delimiter='\t'))
 
-def make_base_sequence(name, bases, qualities):
-    """ Take a list of DNA bases and a corresponding list of quality scores
-    and return a list of Base objects where the base and score are
-    paired together."""
-    if len(bases) <= len(qualities):
-        return [Base(b, q) for (b, q) in izip(bases, qualities)]
-    else:
-        logging.warning("In read {}, fewer quality scores ({}) than bases \
-            ({}).".format(name, len(qualities), len(bases)))
-        # we have fewer quality scores than bases
-        # pad the end with 0 scores
-        return [Base(b, q) for (b, q) in izip(bases, chain(qualities, \
-            repeat(0)))]
-
 def reverse_complement(sequence):
     """ Return the reverse complement of a DNA string."""
-    complementary_bases = {"A":"T", "T":"A", "G":"C", "C":"G", "N":"N"}
-    rc_bases = []
-    for base in sequence:
-        rc_bases.append(complementary_bases[str(base)])
-    rc_seq = "".join([b for b in rc_bases])
-    return rc_seq[::-1]
+    rc_bases = {'A':'T', 'T':'A', 'G':'C', 'C':'G', 'N':'N'}
+    return "".join([rc_bases[base] for base in sequence[::-1]])
 
 def nts(none_string):
     """ Turns None into an empty string."""
@@ -241,38 +221,38 @@ class Deletion(object):
         """ Deletion POS."""
         return self.pos - 1
 
-READ_CONSTANT = 'M00267:48:000000000-A493W:1:1104:14461:10878'
-
-def read_fvariants(args, chrsm, read, pos, insert_seq, bases):
+def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
     """Find all the variants in a forward read (SNVs, Insertions, Deletions)."""
-    #if read.id != READ_CONSTANT:
-    #    return []
     pos -= args.primer_bases
     result = []
-    global total_reads_count
-    global skipped_reads_count
+    # global total_reads_count
+    # global skipped_reads_count
     # Identical insert sequence and read, so there are no variants.
     if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
     bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
-        skipped_reads_count += 1
-        total_reads_count += 1
+        # skipped_reads_count += 1
+        # total_reads_count += 1
         return result
-    total_reads_count += 1
+    # total_reads_count += 1
     alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
-        penalize_end_gaps=(False,False), one_alignment_only=False)[0]
+        penalize_end_gaps=(0, 0), one_alignment_only=1)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
-    aligned_insert_orig, aligned_read_orig = aligned_insert, aligned_read
     context = '-'
-    print aligned_insert, aligned_read
     while aligned_insert and aligned_read:
         if aligned_insert[0] == aligned_read[0]:
             context = aligned_insert[0]
             aligned_insert = aligned_insert[1:]
             aligned_read = aligned_read[1:]
+            qual = qual[1:]
             pos += 1
         else:
             if not (aligned_insert[0] == '-' or aligned_read[0] == '-'):
-                snv = SNV(chrsm, pos, aligned_insert[0], aligned_read[0], '.')
+                snv = SNV(chrsm, pos, aligned_insert[0], aligned_read[0], \
+                    qual[0])
+                if not ((args.qualthresh is None) or (qual[0] >= \
+                    args.qualthresh)):
+                    snv.filter_reason = ''.join([nts(snv.filter_reason), \
+                    ";qlt"])
                 result.append(snv)
                 context = aligned_insert[0]
                 aligned_insert = aligned_insert[1:]
@@ -290,9 +270,14 @@ def read_fvariants(args, chrsm, read, pos, insert_seq, bases):
                     return result
                 insertion = Insertion(chrsm, pos, aligned_read\
                     [:ins_length], context)
+                if not ((args.qualthresh is None) or all([b >= \
+                    args.qualthresh for b in qual[ins_length:]])):
+                    insertion.filter_reason = ''.join([nts(insertion.\
+                    filter_reason), ";qlt"])
                 result.append(insertion)
                 aligned_read = aligned_read[ins_length:]
                 aligned_insert = aligned_insert[ins_length:]
+                qual = qual[ins_length:]
             elif aligned_read[0] == '-':
                 delete = True
                 del_length = 0
@@ -305,6 +290,10 @@ def read_fvariants(args, chrsm, read, pos, insert_seq, bases):
                     return result
                 deletion = Deletion(chrsm, pos, aligned_insert\
                     [:del_length], context)
+                if not ((args.qualthresh is None) or (qual[0] >= \
+                    args.qualthresh)):
+                    deletion.filter_reason = ''.join([nts(deletion.\
+                    filter_reason), ";qlt"])
                 result.append(deletion)
                 context = aligned_insert[del_length - 1]
                 aligned_insert = aligned_insert[del_length:]
@@ -312,33 +301,36 @@ def read_fvariants(args, chrsm, read, pos, insert_seq, bases):
                 pos += del_length
     return result
 
-def read_rvariants(args, chrsm, read, pos, insert_seq, bases):
+def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
     """Find all the variants in a reverse read (SNVs, Insertions, Deletions)."""
-    #if read.id != READ_CONSTANT:
-    #    return []
     pos += args.primer_bases
     result = []
-    global total_reads_count
-    global skipped_reads_count
+    # global total_reads_count
+    # global skipped_reads_count
     # Identical insert sequence and read, so there are no variants.
     if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
     bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
-        skipped_reads_count += 1
-        total_reads_count += 1
+        # skipped_reads_count += 1
+        # total_reads_count += 1
         return result
-    total_reads_count += 1
+    # total_reads_count += 1
     alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
-        penalize_end_gaps=(False,False), one_alignment_only=False)[0]
+        penalize_end_gaps=(0, 0), one_alignment_only=1)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
-    print aligned_insert, aligned_read
     while aligned_insert and aligned_read:
         if aligned_insert[-1] == aligned_read[-1]:
             aligned_insert = aligned_insert[:-1]
             aligned_read = aligned_read[:-1]
+            qual = qual[:-1]
             pos -= 1
         else:
             if not (aligned_insert[-1] == '-' or aligned_read[-1] == '-'):
-                snv = SNV(chrsm, pos, aligned_insert[-1], aligned_read[-1], '.')
+                snv = SNV(chrsm, pos, aligned_insert[-1], aligned_read[-1], \
+                    qual[-1])
+                if not ((args.qualthresh is None) or (qual[-1] >= \
+                    args.qualthresh)):
+                    snv.filter_reason = ''.join([nts(snv.filter_reason), \
+                    ";qlt"])
                 result.append(snv)
                 aligned_insert = aligned_insert[:-1]
                 aligned_read = aligned_read[:-1]
@@ -355,21 +347,31 @@ def read_rvariants(args, chrsm, read, pos, insert_seq, bases):
                     return result
                 insertion = Insertion(chrsm, pos + 1, aligned_read[-1 * \
                     ins_length:], aligned_insert[-1 * ins_length - 1])
+                if not ((args.qualthresh is None) or all([b >= args.qualthresh \
+                    for b in qual[:-1 * ins_length]])):
+                    insertion.filter_reason = ''.join([nts(insertion.\
+                    filter_reason), ";qlt"])
                 result.append(insertion)
                 aligned_read = aligned_read[:-1 * ins_length]
                 aligned_insert = aligned_insert[:-1 * ins_length]
+                qual = qual[:-1 * ins_length]
             elif aligned_read[-1] == '-':
                 delete = True
                 del_length = 0
-                for base in aligned_read[::-1]  :
+                for base in aligned_read[::-1]:
                     if base == '-' and delete:
                         del_length += 1
                     else:
                         delete = False
                 if del_length >= len(aligned_insert):
                     return result
-                deletion = Deletion(chrsm, pos - del_length + 1, aligned_insert[-1 * \
-                    del_length:], aligned_insert[-1 * del_length - 1])
+                deletion = Deletion(chrsm, pos - del_length + 1, \
+                    aligned_insert[-1 * del_length:], aligned_insert\
+                    [-1 * del_length - 1])
+                if not ((args.qualthresh is None) or (qual[-1] >= \
+                    args.qualthresh)):
+                    deletion.filter_reason = ''.join([nts(deletion.\
+                    filter_reason), ";qlt"])
                 result.append(deletion)
                 aligned_insert = aligned_insert[:-1 * del_length]
                 aligned_read = aligned_read[:-1 * del_length]
@@ -388,8 +390,8 @@ def initialise_blocks(args):
     for primer in primer_info:
         primer_sequences[primer[0]] = primer[1]
     for block in block_coords:
-        ref_sequence = reference[block[0]][int(block[1]) - 1 - args.primer_bases:\
-        int(block[2]) + args.primer_bases]
+        ref_sequence = reference[block[0]][int(block[1]) - 1 - \
+        args.primer_bases:int(block[2]) + args.primer_bases]
         # Actual block, for which the key is the first 20 bases of the forward
         # primer.
         blocks[primer_sequences[block[3]][:20]] = [block[0], block[1], \
@@ -458,11 +460,16 @@ def process_blocks(args, blocks, id_info, vcf_file):
                 forward_bases = read1.seq[fprimerlen - args.primer_bases:]
                 reverse_bases = read2.seq[rprimerlen - args.primer_bases:]
 
+                forward_qual = read1.letter_annotations["phred_quality"]\
+                [fprimerlen - args.primer_bases:]
+                reverse_qual = read2.letter_annotations["phred_quality"]\
+                [rprimerlen - args.primer_bases:]
+
                 # Read variants for the forward read.
-                variants1 = read_fvariants(args, chrsm, read1, start, \
+                variants1 = read_fvariants(args, chrsm, forward_qual, start, \
                     insert_seq.upper(), str(forward_bases).upper())
                 # Read variants for the reverse read.
-                variants2 = read_rvariants(args, chrsm, read2, end, \
+                variants2 = read_rvariants(args, chrsm, reverse_qual, end, \
                     insert_seq.upper(), \
                     reverse_complement(str(reverse_bases)).upper())
 
@@ -499,7 +506,7 @@ def process_blocks(args, blocks, id_info, vcf_file):
     if args.coverdir is not None:
         coverage_filename = os.path.join(args.coverdir, coverage_filename)
     with open(coverage_filename, 'w') as coverage_file:
-        write_coverage_data(args, coverage_file, coverage_info)
+        write_coverage_data(coverage_file, coverage_info)
 
 def write_variant(vcf_file, variant, id_info, args):
     """ Writes variant to vcf_file, while also finding the relevant rs number
@@ -523,7 +530,7 @@ str(record_info.ID), variant.ref(), variant.alt(), str(variant.qual), variant\
 '.', variant.ref(), variant.alt(), str(variant.qual), variant.fil(), ';'\
 .join(variant.info)]) + '\n')
 
-def write_coverage_data(args, coverage_file, coverage_info):
+def write_coverage_data(coverage_file, coverage_info):
     """ Write coverage information to the coverage files."""
     coverage_file.write('chr\tblock_start\tblock_end\tnum_pairs\n')
     for chrsm, start, end, num_pairs in sorted(coverage_info, \
@@ -572,12 +579,14 @@ def main():
     with open(args.out, 'w') as vcf_file:
         if args.id_info:
             vcf_reader = vcf.Reader(filename=args.id_info)
+        else:
+            vcf_reader = None
         write_metadata(args, vcf_file)
         vcf_file.write(OUTPUT_HEADER + '\n')
         blocks = initialise_blocks(args)
         final_blocks = complete_blocks(args, blocks)
         process_blocks(args, final_blocks, vcf_reader, vcf_file)
-        print skipped_reads_count * 100/float(total_reads_count)
+        # print skipped_reads_count * 100/float(total_reads_count)
 
 if __name__ == '__main__':
     main()
