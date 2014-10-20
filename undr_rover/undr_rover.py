@@ -13,9 +13,6 @@ import os
 import sys
 import vcf
 
-# total_reads_count = 0
-# skipped_reads_count = 0
-
 DEFAULT_PRIMER_BASES = 3
 DEFAULT_KMER_THRESHOLD = 0
 DEFAULT_PROPORTION_THRESHOLD = 0.05
@@ -225,15 +222,10 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
     """Find all the variants in a forward read (SNVs, Insertions, Deletions)."""
     pos -= args.primer_bases
     result = []
-    # global total_reads_count
-    # global skipped_reads_count
     # Identical insert sequence and read, so there are no variants.
     if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
     bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
-        # skipped_reads_count += 1
-        # total_reads_count += 1
         return result
-    # total_reads_count += 1
     alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
         penalize_end_gaps=(0, 0), one_alignment_only=1)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
@@ -247,8 +239,7 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
             pos += 1
         else:
             if not (aligned_insert[0] == '-' or aligned_read[0] == '-'):
-                snv = SNV(chrsm, pos, aligned_insert[0], aligned_read[0], \
-                    qual[0])
+                snv = SNV(chrsm, pos, aligned_insert[0], aligned_read[0], '.')
                 if not ((args.qualthresh is None) or (qual[0] >= \
                     args.qualthresh)):
                     snv.filter_reason = ''.join([nts(snv.filter_reason), \
@@ -305,15 +296,10 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
     """Find all the variants in a reverse read (SNVs, Insertions, Deletions)."""
     pos += args.primer_bases
     result = []
-    # global total_reads_count
-    # global skipped_reads_count
     # Identical insert sequence and read, so there are no variants.
     if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
     bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
-        # skipped_reads_count += 1
-        # total_reads_count += 1
         return result
-    # total_reads_count += 1
     alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
         penalize_end_gaps=(0, 0), one_alignment_only=1)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
@@ -325,8 +311,7 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
             pos -= 1
         else:
             if not (aligned_insert[-1] == '-' or aligned_read[-1] == '-'):
-                snv = SNV(chrsm, pos, aligned_insert[-1], aligned_read[-1], \
-                    qual[-1])
+                snv = SNV(chrsm, pos, aligned_insert[-1], aligned_read[-1], '.')
                 if not ((args.qualthresh is None) or (qual[-1] >= \
                     args.qualthresh)):
                     snv.filter_reason = ''.join([nts(snv.filter_reason), \
@@ -486,6 +471,8 @@ def process_blocks(args, blocks, id_info, vcf_file):
                             block_vars[var] = 1
 
         logging.info("Number of read pairs in block: {}".format(num_pairs))
+        logging.info("Number of variants found in block: {}".\
+            format(len(block_vars)))
 
         for var in block_vars:
             num_vars = block_vars[var]
