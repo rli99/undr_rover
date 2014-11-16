@@ -13,8 +13,11 @@ import os
 import sys
 import vcf
 
+total_unskipped = 0
+total_unskipped_only_snv = 0
+
 DEFAULT_PRIMER_BASES = 3
-DEFAULT_KMER_THRESHOLD = 0
+DEFAULT_KMER_LENGTH = 5
 DEFAULT_PROPORTION_THRESHOLD = 0.05
 DEFAULT_ABSOLUTE_THRESHOLD = 2
 OUTPUT_HEADER = '\t'.join(["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", \
@@ -32,10 +35,10 @@ def parse_args():
     parser.add_argument('--primer_bases', type=int, \
         default=DEFAULT_PRIMER_BASES, \
         help='Number of bases from primer region to use in gapped alignment.')
-    parser.add_argument('--kmer_threshold', type=int, \
-        default=DEFAULT_KMER_THRESHOLD, \
+    parser.add_argument('--kmer_length', type=int, \
+        default=DEFAULT_KMER_LENGTH, \
         help='K-mer length. If set to zero, k-mer test is not performed by \
-        undr rover. Defaults to {}'.format(DEFAULT_KMER_THRESHOLD))
+        undr rover. Defaults to {}'.format(DEFAULT_KMER_LENGTH))
     parser.add_argument('--proportionthresh', metavar='N', type=float, \
         default=DEFAULT_PROPORTION_THRESHOLD, \
         help='Keep variants which appear in this proportion of the read pairs '
@@ -144,11 +147,11 @@ class SNV(object):
 
 class Insertion(object):
     """ Insertion. Bases are represented as DNA strings."""
-    def __init__(self, chrsm, pos, inserted_bases, context):
+    def __init__(self, chrsm, pos, inserted_bases, context, qual):
         self.chrsm = chrsm
         self.pos = pos
         self.inserted_bases = inserted_bases
-        self.qual = '.'
+        self.qual = qual
         self.filter_reason = None
         self.info = []
         self.context = context
@@ -182,11 +185,11 @@ class Insertion(object):
 
 class Deletion(object):
     """ Deletion. Bases are represented as DNA strings."""
-    def __init__(self, chrsm, pos, deleted_bases, context):
+    def __init__(self, chrsm, pos, deleted_bases, context, qual):
         self.chrsm = chrsm
         self.pos = pos
         self.deleted_bases = deleted_bases
-        self.qual = '.'
+        self.qual = qual
         self.filter_reason = None
         self.info = []
         self.context = context
@@ -218,14 +221,25 @@ class Deletion(object):
         """ Deletion POS."""
         return self.pos - 1
 
+def read_fsnvs(args, chrsm, qual, pos, insert_seq, bases):
+    return 0
+
+def read_rsnvs(args, chrsm, qual, pos, insert_seq, bases):
+    return 0
+
 def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
     """Find all the variants in a forward read (SNVs, Insertions, Deletions)."""
+    global total_unskipped
+    global total_unskipped_only_snv
+    indel = False
+    checked = False
     pos -= args.primer_bases
     result = []
     # Identical insert sequence and read, so there are no variants.
     if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
     bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
         return result
+    total_unskipped += 1
     alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
         penalize_end_gaps=(0, 0), one_alignment_only=1)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
@@ -240,6 +254,8 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
         else:
             if not (aligned_insert[0] == '-' or aligned_read[0] == '-'):
                 snv = SNV(chrsm, pos, aligned_insert[0], aligned_read[0], '.')
+                # snv = SNV(chrsm, pos, aligned_insert[0], aligned_read[0], \
+                #     qual[0])
                 if not ((args.qualthresh is None) or (qual[0] >= \
                     args.qualthresh)):
                     snv.filter_reason = ''.join([nts(snv.filter_reason), \
@@ -248,6 +264,7 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                 context = aligned_insert[0]
                 aligned_insert = aligned_insert[1:]
                 aligned_read = aligned_read[1:]
+                qual = qual[1:]
                 pos += 1
             elif aligned_insert[0] == '-':
                 insert = True
@@ -258,9 +275,14 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                     else:
                         insert = False
                 if ins_length >= len(aligned_insert):
+                    if indel == False and checked == False:
+                        total_unskipped_only_snv += 1
+                        checked = True
                     return result
                 insertion = Insertion(chrsm, pos, aligned_read\
-                    [:ins_length], context)
+                    [:ins_length], context, '.')
+                indel = True
+                # insertion with QUAL data?
                 if not ((args.qualthresh is None) or all([b >= \
                     args.qualthresh for b in qual[ins_length:]])):
                     insertion.filter_reason = ''.join([nts(insertion.\
@@ -278,9 +300,14 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                     else:
                         delete = False
                 if del_length >= len(aligned_insert):
+                    if indel == False and checked == False:
+                        total_unskipped_only_snv += 1
+                        checked = True
                     return result
                 deletion = Deletion(chrsm, pos, aligned_insert\
-                    [:del_length], context)
+                    [:del_length], context, '.')
+                indel = True
+                # deletion with QUAL data?
                 if not ((args.qualthresh is None) or (qual[0] >= \
                     args.qualthresh)):
                     deletion.filter_reason = ''.join([nts(deletion.\
@@ -290,16 +317,24 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                 aligned_insert = aligned_insert[del_length:]
                 aligned_read = aligned_read[del_length:]
                 pos += del_length
+    if indel == False and checked == False:
+        total_unskipped_only_snv += 1
+        checked = True
     return result
 
 def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
     """Find all the variants in a reverse read (SNVs, Insertions, Deletions)."""
+    global total_unskipped
+    global total_unskipped_only_snv
+    indel = False
+    checked = False
     pos += args.primer_bases
     result = []
     # Identical insert sequence and read, so there are no variants.
     if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
     bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
         return result
+    total_unskipped += 1
     alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
         penalize_end_gaps=(0, 0), one_alignment_only=1)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
@@ -312,6 +347,8 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
         else:
             if not (aligned_insert[-1] == '-' or aligned_read[-1] == '-'):
                 snv = SNV(chrsm, pos, aligned_insert[-1], aligned_read[-1], '.')
+                # snv = SNV(chrsm, pos, aligned_insert[-1], aligned_read[-1], \
+                #     qual[0])
                 if not ((args.qualthresh is None) or (qual[-1] >= \
                     args.qualthresh)):
                     snv.filter_reason = ''.join([nts(snv.filter_reason), \
@@ -319,6 +356,7 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                 result.append(snv)
                 aligned_insert = aligned_insert[:-1]
                 aligned_read = aligned_read[:-1]
+                qual = qual[:-1]
                 pos -= 1
             elif aligned_insert[-1] == '-':
                 insert = True
@@ -329,9 +367,14 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                     else:
                         insert = False
                 if ins_length >= len(aligned_insert):
+                    if indel == False and checked == False:
+                        total_unskipped_only_snv += 1
+                        checked = True
                     return result
                 insertion = Insertion(chrsm, pos + 1, aligned_read[-1 * \
-                    ins_length:], aligned_insert[-1 * ins_length - 1])
+                    ins_length:], aligned_insert[-1 * ins_length - 1], '.')
+                indel = True
+                # insertion with QUAL data?
                 if not ((args.qualthresh is None) or all([b >= args.qualthresh \
                     for b in qual[:-1 * ins_length]])):
                     insertion.filter_reason = ''.join([nts(insertion.\
@@ -349,10 +392,15 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                     else:
                         delete = False
                 if del_length >= len(aligned_insert):
+                    if indel == False and checked == False:
+                        total_unskipped_only_snv += 1
+                        checked = True
                     return result
                 deletion = Deletion(chrsm, pos - del_length + 1, \
                     aligned_insert[-1 * del_length:], aligned_insert\
-                    [-1 * del_length - 1])
+                    [-1 * del_length - 1], '.')
+                indel = True
+                # deletion with QUAL data?
                 if not ((args.qualthresh is None) or (qual[-1] >= \
                     args.qualthresh)):
                     deletion.filter_reason = ''.join([nts(deletion.\
@@ -361,6 +409,9 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                 aligned_insert = aligned_insert[:-1 * del_length]
                 aligned_read = aligned_read[:-1 * del_length]
                 pos -= del_length
+    if indel == False and checked == False:
+        total_unskipped_only_snv += 1
+        checked = True
     return result
 
 def initialise_blocks(args):
@@ -450,13 +501,34 @@ def process_blocks(args, blocks, id_info, vcf_file):
                 reverse_qual = read2.letter_annotations["phred_quality"]\
                 [rprimerlen - args.primer_bases:]
 
-                # Read variants for the forward read.
-                variants1 = read_fvariants(args, chrsm, forward_qual, start, \
-                    insert_seq.upper(), str(forward_bases).upper())
-                # Read variants for the reverse read.
-                variants2 = read_rvariants(args, chrsm, reverse_qual, end, \
-                    insert_seq.upper(), \
-                    reverse_complement(str(reverse_bases)).upper())
+                insert = insert_seq.upper()
+                forward_seq = str(forward_bases.upper())
+                reverse_seq = reverse_complement(str(reverse_bases)).upper()
+
+                # Read variants for forward read.
+                if insert[len(insert) - args.kmer_length:len(insert)] == \
+                forward_seq[len(insert) - args.kmer_length:len(insert)]:
+                    variants1 = read_fsnvs(args, chrsm, forward_qual, start, \
+                        insert, forward_seq)
+                    if variants1 == 0:
+                        variants1 = read_fvariants(args, chrsm, forward_qual, \
+                        start, insert, forward_seq)
+                else:
+                    variants1 = read_fvariants(args, chrsm, forward_qual, \
+                        start, insert, forward_seq)
+
+                # Read variants for reverse read.
+                if insert[-1 * len(insert):-1 * len(insert) + args.kmer_length]\
+                == reverse_seq[-1 * len(insert):-1 * len(insert) + \
+                args.kmer_length]:
+                    variants2 = read_rsnvs(args, chrsm, reverse_qual, end, \
+                        insert, reverse_seq)
+                    if variants2 == 0:
+                        variants2 = read_rvariants(args, chrsm, reverse_qual, \
+                            end, insert, reverse_seq)
+                else:
+                    variants2 = read_rvariants(args, chrsm, reverse_qual, end, \
+                        insert, reverse_seq)
 
                 # Find the variants each read in the pair share in common.
                 set_variants1, set_variants2 = set(variants1), set(variants2)
@@ -573,7 +645,8 @@ def main():
         blocks = initialise_blocks(args)
         final_blocks = complete_blocks(args, blocks)
         process_blocks(args, final_blocks, vcf_reader, vcf_file)
-        # print skipped_reads_count * 100/float(total_reads_count)
+        print total_unskipped_only_snv, total_unskipped
+        print float(total_unskipped_only_snv)/total_unskipped
 
 if __name__ == '__main__':
     main()
