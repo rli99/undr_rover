@@ -235,6 +235,7 @@ def read_fsnvs(args, chrsm, qual, pos, insert_seq, bases):
             check = False
             pos += 1
         else:
+            # If we just saw an SNV, return 0 as there are now two in a row.
             if check == True:
                 return 0
             else:
@@ -268,6 +269,7 @@ def read_rsnvs(args, chrsm, qual, pos, insert_seq, bases):
             check = False
             pos -= 1
         else:
+            # If we just saw an SNV, return 0 as there are now two in a row.
             if check == True:
                 return 0
             else:
@@ -293,6 +295,7 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
     if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
     bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
         return result
+    # Pairwise2 uses a C implementation of the Needleman-Wunsch algorithm.
     alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
         penalize_end_gaps=(0, 0), one_alignment_only=1)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
@@ -306,6 +309,7 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
             pos += 1
         else:
             if not (aligned_insert[0] == '-' or aligned_read[0] == '-'):
+                # Single Nucleotide Variation
                 snv = SNV(chrsm, pos, aligned_insert[0], aligned_read[0], '.')
                 # snv = SNV(chrsm, pos, aligned_insert[0], aligned_read[0], \
                 #     qual[0])
@@ -320,7 +324,7 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                 qual = qual[1:]
                 pos += 1
             elif aligned_insert[0] == '-':
-                insert = True
+                insert = True # Insertion
                 ins_length = 0
                 for base in aligned_insert:
                     if base == '-' and insert:
@@ -341,7 +345,7 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                 aligned_insert = aligned_insert[ins_length:]
                 qual = qual[ins_length:]
             elif aligned_read[0] == '-':
-                delete = True
+                delete = True # Deletion
                 del_length = 0
                 for base in aligned_read:
                     if base == '-' and delete:
@@ -373,6 +377,7 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
     if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
     bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
         return result
+    # Pairwise2 uses a C implementation of the Needleman-Wunsch algorithm.
     alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
         penalize_end_gaps=(0, 0), one_alignment_only=1)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
@@ -384,6 +389,7 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
             pos -= 1
         else:
             if not (aligned_insert[-1] == '-' or aligned_read[-1] == '-'):
+                # Single Nucleotide Variation
                 snv = SNV(chrsm, pos, aligned_insert[-1], aligned_read[-1], '.')
                 # snv = SNV(chrsm, pos, aligned_insert[-1], aligned_read[-1], \
                 #     qual[0])
@@ -397,7 +403,7 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                 qual = qual[:-1]
                 pos -= 1
             elif aligned_insert[-1] == '-':
-                insert = True
+                insert = True # Insertion
                 ins_length = 0
                 for base in aligned_insert[::-1]:
                     if base == '-' and insert:
@@ -418,7 +424,7 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                 aligned_insert = aligned_insert[:-1 * ins_length]
                 qual = qual[:-1 * ins_length]
             elif aligned_read[-1] == '-':
-                delete = True
+                delete = True # Deletion
                 del_length = 0
                 for base in aligned_read[::-1]:
                     if base == '-' and delete:
@@ -443,7 +449,7 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
 
 def initialise_blocks(args):
     """ Create blocks, initially containing block coordinates, primer sequences
-    and an empty dictionary to which reads pairs will be added. The blocks
+    and an empty dictionary into which reads pairs will be added. The blocks
     themselves are a dictionary at this stage."""
     blocks = {}
     primer_sequences = {}
@@ -453,6 +459,8 @@ def initialise_blocks(args):
     for primer in primer_info:
         primer_sequences[primer[0]] = primer[1]
     for block in block_coords:
+        # Take some extra bases to help with the variant calling near the edges
+        # of the block.
         ref_sequence = reference[block[0]][int(block[1]) - 1 - \
         args.primer_bases:int(block[2]) + args.primer_bases]
         # Actual block, for which the key is the first 20 bases of the forward
@@ -477,6 +485,7 @@ def complete_blocks(args, blocks):
             exit('Cannot deduce sample name from fastq filename {}'.\
                 format(fastq_file))
         for read in SeqIO.parse(fastq_file, 'fastq'):
+            # Try to match each read with an expected primer.
             read_bases = str(read.seq)
             primer_key = read_bases[:20]
             if primer_key in blocks:
@@ -501,7 +510,7 @@ def complete_blocks(args, blocks):
                         else:
                             blocks[forward_key][3][read.id][1] = read
                             blocks[forward_key][3][read.id][3] = len(rseq)
-    # For the next stage, we take only the actual blocks.
+    # For the next stage, we only need the actual blocks.
     return [b[:5] for b in blocks.values() if len(b) > 2]
 
 def process_blocks(args, blocks, id_info, vcf_file):
@@ -532,6 +541,10 @@ def process_blocks(args, blocks, id_info, vcf_file):
                 forward_seq = str(forward_bases.upper())
                 reverse_seq = reverse_complement(str(reverse_bases)).upper()
 
+                # For both reads, we initially assume that they only have single
+                # nucleotide variants. If we detect successive SNV's in those
+                # reads, we go back and do the gapped alignment.
+
                 variants1 = read_fsnvs(args, chrsm, forward_qual, start, \
                     insert, forward_seq)
                 if variants1 == 0:
@@ -548,6 +561,8 @@ def process_blocks(args, blocks, id_info, vcf_file):
                 if len(variants1) > args.max_variants or len(variants2) > \
                 args.max_variants:
                     variants1, variants2 = [], []
+                    logging.info("Read {} discarded due to an unusually high \
+amount of variants.".format(read1.id))
 
                 # Find the variants each read in the pair share in common.
                 set_variants1, set_variants2 = set(variants1), set(variants2)
@@ -634,11 +649,9 @@ def write_metadata(args, vcf_file):
     if args.qualthresh:
         vcf_file.write("##FILTER=<ID=qlt,Description=\"Variant has phred \
 quality score below " + str(args.qualthresh) + "\">" + '\n')
-    if args.absthresh:
-        vcf_file.write("##FILTER=<ID=at,Description=\"Variant does not appear \
+    vcf_file.write("##FILTER=<ID=at,Description=\"Variant does not appear \
 in at least " + str(args.absthresh) + " read pairs\">" + '\n')
-    if args.proportionthresh:
-        vcf_file.write("##FILTER=<ID=pt,Description=\"Variant does not appear \
+    vcf_file.write("##FILTER=<ID=pt,Description=\"Variant does not appear \
 in at least " + str(args.proportionthresh*100) \
 + "% of read pairs for the given region\">" + '\n')
 
