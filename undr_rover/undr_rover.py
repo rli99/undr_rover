@@ -219,7 +219,7 @@ class Deletion(object):
         return self.pos - 1
 
 def read_fsnvs(args, chrsm, qual, pos, insert_seq, bases):
-    """Find all SNV's in a forward read. 0 if we find two SNV's in a row."""
+    """ Find all SNV's in a forward read. 0 if we find two SNV's in a row."""
     check = False
     pos -= args.primer_bases
     result = []
@@ -252,7 +252,7 @@ def read_fsnvs(args, chrsm, qual, pos, insert_seq, bases):
     return result
 
 def read_rsnvs(args, chrsm, qual, pos, insert_seq, bases):
-    """Find all SNV's in a reverse read. 0 if we find two SNV's in a row."""
+    """ Find all SNV's in a reverse read. 0 if we find two SNV's in a row."""
     check = False
     pos += args.primer_bases
     result = []
@@ -285,7 +285,8 @@ def read_rsnvs(args, chrsm, qual, pos, insert_seq, bases):
     return result
 
 def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
-    """Find all the variants in a forward read (SNVs, Insertions, Deletions)."""
+    """ Find all the variants in a forward read (SNVs, Insertions,
+    Deletions)."""
     pos -= args.primer_bases
     result = []
     # Identical insert sequence and read, so there are no variants.
@@ -364,7 +365,8 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
     return result
 
 def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
-    """Find all the variants in a reverse read (SNVs, Insertions, Deletions)."""
+    """ Find all the variants in a reverse read (SNVs, Insertions,
+        Deletions)."""
     pos += args.primer_bases
     result = []
     # Identical insert sequence and read, so there are no variants.
