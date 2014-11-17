@@ -23,7 +23,7 @@ OUTPUT_HEADER = '\t'.join(["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", \
 def parse_args():
     """ Find variants from fastqs via a mapping-free approach."""
     parser = ArgumentParser(description="Find variants from fastqs via a \
-        mapping-free approach.""")
+        mapping-free approach.")
     parser.add_argument('--primer_coords', type=str, required=True, \
         help='Primer coordinates in TSV format.')
     parser.add_argument('--primer_sequences', metavar='FILE', type=str, \
