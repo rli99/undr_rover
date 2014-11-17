@@ -13,11 +13,11 @@ import os
 import sys
 import vcf
 
-total_unskipped = 0
-total_unskipped_only_snv = 0
+# total_unskipped = 0
+# total_unskipped_only_snv = 0
 
 DEFAULT_PRIMER_BASES = 3
-DEFAULT_KMER_LENGTH = 5
+DEFAULT_KMER_LENGTH = 3
 DEFAULT_PROPORTION_THRESHOLD = 0.05
 DEFAULT_ABSOLUTE_THRESHOLD = 2
 OUTPUT_HEADER = '\t'.join(["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", \
@@ -222,24 +222,84 @@ class Deletion(object):
         return self.pos - 1
 
 def read_fsnvs(args, chrsm, qual, pos, insert_seq, bases):
-    return 0
-
-def read_rsnvs(args, chrsm, qual, pos, insert_seq, bases):
-    return 0
-
-def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
-    """Find all the variants in a forward read (SNVs, Insertions, Deletions)."""
-    global total_unskipped
-    global total_unskipped_only_snv
-    indel = False
-    checked = False
+    """Find all SNV's in a forward read. 0 if we find two SNV's in a row."""
+    check = False
     pos -= args.primer_bases
     result = []
     # Identical insert sequence and read, so there are no variants.
     if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
     bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
         return result
-    total_unskipped += 1
+    while insert_seq and bases:
+        if insert_seq[0] == bases[0]:
+            insert_seq = insert_seq[1:]
+            bases = bases[1:]
+            qual = qual[1:]
+            check = False
+            pos += 1
+        else:
+            if check == True:
+                return 0
+            else:
+                check = True
+            snv = SNV(chrsm, pos, insert_seq[0], bases[0], '.')
+            if not ((args.qualthresh is None) or (qual[0] >= \
+                args.qualthresh)):
+                snv.filter_reason = ''.join([nts(snv.filter_reason), \
+                ";qlt"])
+            result.append(snv)
+            insert_seq = insert_seq[1:]
+            bases = bases[1:]
+            qual = qual[1:]
+            pos += 1
+    return result
+
+def read_rsnvs(args, chrsm, qual, pos, insert_seq, bases):
+    """Find all SNV's in a reverse read. 0 if we find two SNV's in a row."""
+    check = False
+    pos += args.primer_bases
+    result = []
+    # Identical insert sequence and read, so there are no variants.
+    if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
+    bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
+        return result
+    while insert_seq and bases:
+        if insert_seq[-1] == bases[-1]:
+            insert_seq = insert_seq[:-1]
+            bases = bases[:-1]
+            qual = qual[:-1]
+            check = False
+            pos -= 1
+        else:
+            if check == True:
+                return 0
+            else:
+                check = True
+            snv = SNV(chrsm, pos, insert_seq[-1], bases[-1], '.')
+            if not ((args.qualthresh is None) or (qual[-1] >= \
+                args.qualthresh)):
+                snv.filter_reason = ''.join([nts(snv.filter_reason), \
+                ";qlt"])
+            result.append(snv)
+            insert_seq = insert_seq[:-1]
+            bases = bases[:-1]
+            qual = qual[:-1]
+            pos -= 1
+    return result
+
+def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
+    """Find all the variants in a forward read (SNVs, Insertions, Deletions)."""
+    # global total_unskipped
+    # global total_unskipped_only_snv
+    # indel = False
+    # checked = False
+    pos -= args.primer_bases
+    result = []
+    # Identical insert sequence and read, so there are no variants.
+    if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
+    bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
+        return result
+    # total_unskipped += 1
     alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
         penalize_end_gaps=(0, 0), one_alignment_only=1)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
@@ -275,13 +335,13 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                     else:
                         insert = False
                 if ins_length >= len(aligned_insert):
-                    if indel == False and checked == False:
-                        total_unskipped_only_snv += 1
-                        checked = True
+                    # if indel == False and checked == False:
+                    #     total_unskipped_only_snv += 1
+                    #     checked = True
                     return result
                 insertion = Insertion(chrsm, pos, aligned_read\
                     [:ins_length], context, '.')
-                indel = True
+                # indel = True
                 # insertion with QUAL data?
                 if not ((args.qualthresh is None) or all([b >= \
                     args.qualthresh for b in qual[ins_length:]])):
@@ -300,13 +360,13 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                     else:
                         delete = False
                 if del_length >= len(aligned_insert):
-                    if indel == False and checked == False:
-                        total_unskipped_only_snv += 1
-                        checked = True
+                    # if indel == False and checked == False:
+                    #     total_unskipped_only_snv += 1
+                    #     checked = True
                     return result
                 deletion = Deletion(chrsm, pos, aligned_insert\
                     [:del_length], context, '.')
-                indel = True
+                # indel = True
                 # deletion with QUAL data?
                 if not ((args.qualthresh is None) or (qual[0] >= \
                     args.qualthresh)):
@@ -317,24 +377,24 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                 aligned_insert = aligned_insert[del_length:]
                 aligned_read = aligned_read[del_length:]
                 pos += del_length
-    if indel == False and checked == False:
-        total_unskipped_only_snv += 1
-        checked = True
+    # if indel == False and checked == False:
+    #     total_unskipped_only_snv += 1
+    #     checked = True
     return result
 
 def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
     """Find all the variants in a reverse read (SNVs, Insertions, Deletions)."""
-    global total_unskipped
-    global total_unskipped_only_snv
-    indel = False
-    checked = False
+    # global total_unskipped
+    # global total_unskipped_only_snv
+    # indel = False
+    # checked = False
     pos += args.primer_bases
     result = []
     # Identical insert sequence and read, so there are no variants.
     if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
     bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
         return result
-    total_unskipped += 1
+    # total_unskipped += 1
     alignment = pairwise2.align.globalms(insert_seq, bases, 2, 0, -2, -1, \
         penalize_end_gaps=(0, 0), one_alignment_only=1)[0]
     aligned_insert, aligned_read = alignment[0], alignment[1]
@@ -367,13 +427,13 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                     else:
                         insert = False
                 if ins_length >= len(aligned_insert):
-                    if indel == False and checked == False:
-                        total_unskipped_only_snv += 1
-                        checked = True
+                    # if indel == False and checked == False:
+                    #     total_unskipped_only_snv += 1
+                    #     checked = True
                     return result
                 insertion = Insertion(chrsm, pos + 1, aligned_read[-1 * \
                     ins_length:], aligned_insert[-1 * ins_length - 1], '.')
-                indel = True
+                # indel = True
                 # insertion with QUAL data?
                 if not ((args.qualthresh is None) or all([b >= args.qualthresh \
                     for b in qual[:-1 * ins_length]])):
@@ -392,14 +452,14 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                     else:
                         delete = False
                 if del_length >= len(aligned_insert):
-                    if indel == False and checked == False:
-                        total_unskipped_only_snv += 1
-                        checked = True
+                    # if indel == False and checked == False:
+                    #     total_unskipped_only_snv += 1
+                    #     checked = True
                     return result
                 deletion = Deletion(chrsm, pos - del_length + 1, \
                     aligned_insert[-1 * del_length:], aligned_insert\
                     [-1 * del_length - 1], '.')
-                indel = True
+                # indel = True
                 # deletion with QUAL data?
                 if not ((args.qualthresh is None) or (qual[-1] >= \
                     args.qualthresh)):
@@ -409,9 +469,9 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                 aligned_insert = aligned_insert[:-1 * del_length]
                 aligned_read = aligned_read[:-1 * del_length]
                 pos -= del_length
-    if indel == False and checked == False:
-        total_unskipped_only_snv += 1
-        checked = True
+    # if indel == False and checked == False:
+    #     total_unskipped_only_snv += 1
+    #     checked = True
     return result
 
 def initialise_blocks(args):
@@ -504,31 +564,46 @@ def process_blocks(args, blocks, id_info, vcf_file):
                 insert = insert_seq.upper()
                 forward_seq = str(forward_bases.upper())
                 reverse_seq = reverse_complement(str(reverse_bases)).upper()
+                ins_len = len(insert) - args.primer_bases
 
-                # Read variants for forward read.
-                if insert[len(insert) - args.kmer_length:len(insert)] == \
-                forward_seq[len(insert) - args.kmer_length:len(insert)]:
-                    variants1 = read_fsnvs(args, chrsm, forward_qual, start, \
-                        insert, forward_seq)
-                    if variants1 == 0:
-                        variants1 = read_fvariants(args, chrsm, forward_qual, \
-                        start, insert, forward_seq)
-                else:
+                variants1 = read_fsnvs(args, chrsm, forward_qual, start, \
+                    insert, forward_seq)
+                if variants1 == 0:
                     variants1 = read_fvariants(args, chrsm, forward_qual, \
                         start, insert, forward_seq)
 
-                # Read variants for reverse read.
-                if insert[-1 * len(insert):-1 * len(insert) + args.kmer_length]\
-                == reverse_seq[-1 * len(insert):-1 * len(insert) + \
-                args.kmer_length]:
-                    variants2 = read_rsnvs(args, chrsm, reverse_qual, end, \
-                        insert, reverse_seq)
-                    if variants2 == 0:
-                        variants2 = read_rvariants(args, chrsm, reverse_qual, \
-                            end, insert, reverse_seq)
-                else:
+                variants2 = read_rsnvs(args, chrsm, reverse_qual, end, \
+                    insert, reverse_seq)
+                if variants2 == 0:
                     variants2 = read_rvariants(args, chrsm, reverse_qual, end, \
                         insert, reverse_seq)
+
+                # Read variants for forward read.
+                # if insert[ins_len - args.kmer_length:ins_len] == \
+                # forward_seq[ins_len - args.kmer_length:ins_len]:
+                #     variants1 = read_fsnvs(args, chrsm, forward_qual, start, \
+                #         insert, forward_seq)
+                #     if variants1 == 0:
+                #         # print "two snv's in a row"
+                #         variants1 = read_fvariants(args, chrsm, forward_qual, \
+                #         start, insert, forward_seq)
+                # else:
+                #     variants1 = read_fvariants(args, chrsm, forward_qual, \
+                #         start, insert, forward_seq)
+
+                # Read variants for reverse read.
+                # if insert[-1 * ins_len:-1 * ins_len + args.kmer_length]\
+                # == reverse_seq[-1 * ins_len:-1 * ins_len + \
+                # args.kmer_length]:
+                #     variants2 = read_rsnvs(args, chrsm, reverse_qual, end, \
+                #         insert, reverse_seq)
+                #     if variants2 == 0:
+                #         # print "two snv's in a row"
+                #         variants2 = read_rvariants(args, chrsm, reverse_qual, \
+                #             end, insert, reverse_seq)
+                # else:
+                #     variants2 = read_rvariants(args, chrsm, reverse_qual, end, \
+                #         insert, reverse_seq)
 
                 # Find the variants each read in the pair share in common.
                 set_variants1, set_variants2 = set(variants1), set(variants2)
@@ -645,8 +720,8 @@ def main():
         blocks = initialise_blocks(args)
         final_blocks = complete_blocks(args, blocks)
         process_blocks(args, final_blocks, vcf_reader, vcf_file)
-        print total_unskipped_only_snv, total_unskipped
-        print float(total_unskipped_only_snv)/total_unskipped
+        # print total_unskipped_only_snv, total_unskipped
+        # print float(total_unskipped_only_snv)/total_unskipped
 
 if __name__ == '__main__':
     main()
