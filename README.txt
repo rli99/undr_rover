@@ -21,9 +21,9 @@ License:
 
 Citation:
 
-	Please cite Undr Rover as follows:
+    Please cite Undr Rover as follows:
 
-	<Citation>
+    <Citation>
 
 Requirements: Python 2.7, and the PySam, PyVCF, Pyfaidx and Biopython libraries
 (http://code.google.com/p/pysam/)
@@ -48,122 +48,122 @@ usage: undr_rover [-h] --primer_coords PRIMERS --primer_sequences SEQ
                   fastqs [fastqs ...]
 
 positional arguments:
-	fastqs						FASTQ files containing reads
+    fastqs                      FASTQ files containing reads
 
 optional arguments:
-	-h, --help					Show this help message and exit.
-	--primer_coords PRIMERS 	Primer coordinates in TSV format.
-	--primer_sequences SEQ 		Primer base sequences as determined by a primer
-								generating program.
-	--primer_bases N 			Number of bases from primer region to use in
-								gapped alignment.
-	--proportionthresh N 		Keep variants which appear in this proportion of
-								the read pairs for a given target region, and 
-								bin	otherwise. Defaults to 0.05.
-	--absthresh N         		Only keep variants which appear in at least this
-								many read pairs. Defaults to 2.
-	--qualthresh N        		Minimum base quality score (phred).
-	--max_variants N 			Maximum amount of variants per read before the
-								read is discarded. Defaults to 25.
-	--reference FILE 			Reference sequences in FASTA format.
-	--id_info FILE 				File containing rs ID information in vcf format.
-	--out FILE 					Output file containing called variants.
-	--log FILE 					Logs progress in specified file, defaults to 
-								stdout.
-	--coverdir COVERDIR 		Directory to write coverage files, defaults to
-								current working directory.
+    -h, --help                  Show this help message and exit.
+    --primer_coords PRIMERS     Primer coordinates in TSV format.
+    --primer_sequences SEQ      Primer base sequences as determined by a primer
+                                generating program.
+    --primer_bases N            Number of bases from primer region to use in
+                                gapped alignment.
+    --proportionthresh N        Keep variants which appear in this proportion of
+                                the read pairs for a given target region, and 
+                                bin otherwise. Defaults to 0.05.
+    --absthresh N               Only keep variants which appear in at least this
+                                many read pairs. Defaults to 2.
+    --qualthresh N              Minimum base quality score (phred).
+    --max_variants N            Maximum amount of variants per read before the
+                                read is discarded. Defaults to 25.
+    --reference FILE            Reference sequences in FASTA format.
+    --id_info FILE              File containing rs ID information in vcf format.
+    --out FILE                  Output file containing called variants.
+    --log FILE                  Logs progress in specified file, defaults to 
+                                stdout.
+    --coverdir COVERDIR         Directory to write coverage files, defaults to
+                                current working directory.
 
 Explanation of the arguments
-	
-	-h
+    
+    -h
 
-		Print a help message and exit.
+        Print a help message and exit.
 
-	--primer_coords PRIMERS
+    --primer_coords PRIMERS
 
-		Required.
+        Required.
 
-		A list of primers with their expected coordinates. TSV format with the
-		following data:
+        A list of primers with their expected coordinates. TSV format with the
+        following data:
 
-			chromosome	start	end
+            chromosome  start   end
 
-	--primer_sequences SEQ
+    --primer_sequences SEQ
 
-		Required.
+        Required.
 
-		A list of primers with their expected base sequences. TSV format with
-		the following data:
+        A list of primers with their expected base sequences. TSV format with
+        the following data:
 
-			primer_name	sequence
+            primer_name sequence
 
-	--primer_bases N
+    --primer_bases N
 
-		Optional. Defaults to 3.
+        Optional. Defaults to 3.
 
-		The number of additional bases from the primer regions to use with the
-		insert sequence to help with the gapped alignment near the edges of the
-		block. 
+        The number of additional bases from the primer regions to use with the
+        insert sequence to help with the gapped alignment near the edges of the
+        block. 
 
-	--proportionthresh N
+    --proportionthresh N
 
-	    Optional. Defaults to 0.05.
+        Optional. Defaults to 0.05.
 
-	    Only keep variants which appear in this proportion of the read pairs for
-	    a given target region, and bin otherwise. A variant must appear in
-	    both reads of a pair to be counted. The proportion is calculated as
-	    follows:
+        Only keep variants which appear in this proportion of the read pairs for
+        a given target region, and bin otherwise. A variant must appear in
+        both reads of a pair to be counted. The proportion is calculated as
+        follows:
 
-	        N = number of pairs containing this variant in both reads
-	        T = number of read pairs overlapping the target region
+            N = number of pairs containing this variant in both reads
+            T = number of read pairs overlapping the target region
 
-	        proportion = N/T
+            proportion = N/T
 
-	    Note: variants must pass BOTH the proportionthresh and absthresh 
-	    thresholds to be kept. If they fail either test then they are binned.
+        Note: variants must pass BOTH the proportionthresh and absthresh 
+        thresholds to be kept. If they fail either test then they are binned.
 
-	    That is to say:
+        That is to say:
 
-	        if N/T  >= proportionthresh and N >= absthresh:
-	            keep the variant
-	        else:
-	            bin the variant
+            if N/T  >= proportionthresh and N >= absthresh:
+                keep the variant
+            else:
+                bin the variant
 
-	--absthresh N
+    --absthresh N
 
-	    Optional. Defaults to 2 read pairs.
+        Optional. Defaults to 2 read pairs.
 
-	    Only keep variants which appear in at least this many read pairs
-	    for a given target region.
+        Only keep variants which appear in at least this many read pairs
+        for a given target region.
 
-	    See comments above about proportionthresh.
+        See comments above about proportionthresh.
 
     --qualthresh N
 
-	    Optional. Minimum phred quality score for bases appearing in SNVs and
-	    insertions. If this argument is set Rover will only consider SNVs and
-	    insertions where all DNA bases in those variants have a quality score
-	    greater than or equal to the argument. For example, setting this
-	    argument to 35 will cause Rover to discard any SNVs or insertions
-	    containing any bases with a score below 35. If the argument is not
-	    set then Rover will not consider quality scores in its decision
-	    to keep or discard a variant.
+        Optional. Minimum phred quality score for bases appearing in SNVs and
+        insertions. If this argument is set Rover will only consider SNVs and
+        insertions where all DNA bases in those variants have a quality score
+        greater than or equal to the argument. For example, setting this
+        argument to 35 will cause Rover to discard any SNVs or insertions
+        containing any bases with a score below 35. If the argument is not
+        set then Rover will not consider quality scores in its decision
+        to keep or discard a variant.
 
     --max_variants N
 
-    	Optional. Defaults to 25. 
+        Optional. Defaults to 25. 
 
-    	The maximum number of variants which can be observed for a single read
-    	before it is considered meaningless and discarded for the purposes of
-    	variant calling. 
+        The maximum number of variants which can be observed for a single read
+        before it is considered meaningless and discarded for the purposes of
+        variant calling. 
 
     --reference FILE
 
-    	Required.
+        Required.
 
-    	Reference sequences in FASTA format. Undr Rover extracts insert 
-    	sequences for each block from the reference and compares this with the
-    	read sequences to call variants.
+        Reference sequences in FASTA format. Undr Rover extracts insert 
+        sequences for each block from the reference and compares this with the
+        read sequences to call variants.
 
     --id_info FILE
 
@@ -186,17 +186,17 @@ Explanation of the arguments
 
     fastqs [fastqs ...]
 
-    	One or more pairs of FASTQ files containing reads for which variant
-    	calling will be attempted.
+        One or more pairs of FASTQ files containing reads for which variant
+        calling will be attempted.
 
 --------------------------------------------------------------------------------
 Example usage (should all be on one line)
 --------------------------------------------------------------------------------
 
-undr_rover.py 	--primer_coords roverfile.txt --primer_sequences primers.txt 
-				--id_info dbsnp.vcf.gz --log log_file 
-				--reference fasta/hg19bis.fa --out variant_calls.vcf 
-				--coverdir coverage_files sample1*.fastq sample2*.fastq
+undr_rover.py   --primer_coords roverfile.txt --primer_sequences primers.txt 
+                --id_info dbsnp.vcf.gz --log log_file 
+                --reference fasta/hg19bis.fa --out variant_calls.vcf 
+                --coverdir coverage_files sample1*.fastq sample2*.fastq
 
 This assumes that there are two FASTQ files each for sample1* and sample2*, 
 which contain the first and second reads respectively for each read pair. 
