@@ -31,7 +31,8 @@ def parse_args():
         program.')
     parser.add_argument('--primer_bases', type=int, \
         default=DEFAULT_PRIMER_BASES, \
-        help='Number of bases from primer region to use in gapped alignment.')
+        help='Number of bases from primer region to use in gapped alignment.'
+        'Helps with variant calling near the edges of a block.')
     parser.add_argument('--proportionthresh', metavar='N', type=float, \
         default=DEFAULT_PROPORTION_THRESHOLD, \
         help='Keep variants which appear in this proportion of the read pairs '
