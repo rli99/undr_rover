@@ -453,28 +453,27 @@ def complete_blocks(args, blocks):
             # Try to match each read with an expected primer.
             read_bases = str(read.seq)
             primer_key = read_bases[:20]
-            if primer_key in blocks:
-                if len(blocks[primer_key]) == 9:
-                    # Possible forward primer matched.
-                    fseq = blocks[primer_key][7]
-                    if fseq == read_bases[:len(fseq)]:
-                        if read.id not in blocks[primer_key][3]:
-                            blocks[primer_key][3][read.id] = [read, 0, \
-                            len(fseq), 0, sample]
-                        else:
-                            blocks[primer_key][3][read.id][0] = read
-                            blocks[primer_key][3][read.id][2] = len(fseq)
-                elif len(blocks[primer_key]) == 2:
-                    # Possible reverse primer matched.
-                    rseq = blocks[primer_key][0]
-                    if rseq == read_bases[:len(rseq)]:
-                        forward_key = blocks[primer_key][1]
-                        if read.id not in blocks[forward_key][3]:
-                            blocks[forward_key][3][read.id] = [0, read, \
-                            0, len(rseq), sample]
-                        else:
-                            blocks[forward_key][3][read.id][1] = read
-                            blocks[forward_key][3][read.id][3] = len(rseq)
+            if len(blocks.get(primer_key, [])) == 9:
+                # Possible forward primer matched.
+                fseq = blocks[primer_key][7]
+                if fseq == read_bases[:len(fseq)]:
+                    if read.id not in blocks[primer_key][3]:
+                        blocks[primer_key][3][read.id] = [read, 0, \
+                        len(fseq), 0, sample]
+                    else:
+                        blocks[primer_key][3][read.id][0] = read
+                        blocks[primer_key][3][read.id][2] = len(fseq)
+            elif len(blocks.get(primer_key, [])) == 2:
+                # Possible reverse primer matched.
+                rseq = blocks[primer_key][0]
+                if rseq == read_bases[:len(rseq)]:
+                    forward_key = blocks[primer_key][1]
+                    if read.id not in blocks[forward_key][3]:
+                        blocks[forward_key][3][read.id] = [0, read, \
+                        0, len(rseq), sample]
+                    else:
+                        blocks[forward_key][3][read.id][1] = read
+                        blocks[forward_key][3][read.id][3] = len(rseq)
     # For the next stage, we only need the actual blocks.
     return [b[:5] for b in blocks.values() if len(b) > 2]
 
@@ -490,50 +489,49 @@ def process_blocks(args, blocks, id_info, vcf_file):
         end = int(end)
         logging.info("Processing block chr: {}, start: {}, end: {}"\
             .format(chrsm, start, end))
-        for read_pair in reads.values():
-            if 0 not in read_pair:
-                num_pairs += 1
-                read1, read2, fprimerlen, rprimerlen, sample = read_pair
-                forward_bases = read1.seq[fprimerlen - args.primer_bases:]
-                reverse_bases = read2.seq[rprimerlen - args.primer_bases:]
+        for read_pair in [r for r in reads.values() if 0 not in r]:
+            num_pairs += 1
+            read1, read2, fprimerlen, rprimerlen, sample = read_pair
+            forward_bases = read1.seq[fprimerlen - args.primer_bases:]
+            reverse_bases = read2.seq[rprimerlen - args.primer_bases:]
 
-                forward_qual = read1.letter_annotations["phred_quality"]\
-                [fprimerlen - args.primer_bases:]
-                reverse_qual = read2.letter_annotations["phred_quality"]\
-                [rprimerlen - args.primer_bases:]
+            forward_qual = read1.letter_annotations['phred_quality']\
+            [fprimerlen - args.primer_bases:]
+            reverse_qual = read2.letter_annotations['phred_quality']\
+            [rprimerlen - args.primer_bases:]
 
-                insert = insert_seq.upper()
-                forward_seq = str(forward_bases.upper())
-                reverse_seq = reverse_complement(str(reverse_bases)).upper()
+            insert = insert_seq.upper()
+            forward_seq = str(forward_bases.upper())
+            reverse_seq = reverse_complement(str(reverse_bases)).upper()
 
-                # For both reads, we initially assume that they only have single
-                # nucleotide variants. If we detect successive SNV's in those
-                # reads, we go back and do the gapped alignment.
+            # For both reads, we initially assume that they only have single
+            # nucleotide variants. If we detect successive SNV's in those
+            # reads, we go back and do the gapped alignment.
 
-                variants1 = read_fsnvs(args, chrsm, forward_qual, start, \
-                    insert, forward_seq)
-                variants2 = read_rsnvs(args, chrsm, reverse_qual, end, \
+            variants1 = read_fsnvs(args, chrsm, forward_qual, start, \
+                insert, forward_seq)
+            variants2 = read_rsnvs(args, chrsm, reverse_qual, end, \
+                insert, reverse_seq)
+
+            if variants1 == 0:
+                variants1 = read_fvariants(args, chrsm, forward_qual, \
+                    start, insert, forward_seq)
+            if variants2 == 0:
+                variants2 = read_rvariants(args, chrsm, reverse_qual, end, \
                     insert, reverse_seq)
 
-                if variants1 == 0:
-                    variants1 = read_fvariants(args, chrsm, forward_qual, \
-                        start, insert, forward_seq)
-                if variants2 == 0:
-                    variants2 = read_rvariants(args, chrsm, reverse_qual, end, \
-                        insert, reverse_seq)
-
-                # Ignore reads which have an unusually high amount of variants.
-                if len(variants1) > args.max_variants or len(variants2) > \
-                args.max_variants:
-                    variants1, variants2 = [], []
-                    logging.info("Read {} discarded due to an unusually high \
+            # Ignore reads which have an unusually high amount of variants.
+            if len(variants1) > args.max_variants or len(variants2) > \
+            args.max_variants:
+                variants1, variants2 = [], []
+                logging.info("Read {} discarded due to an unusually high \
 amount of variants.".format(read1.id))
 
-                # Consider variants each read in the pair share in common.
-                for var in set(variants1).intersection(set(variants2)):
-                    # Only consider variants within the bounds of the block.
-                    if var.pos >= start and var.pos <= end:
-                        block_vars[var] = block_vars.get(var, 0) + 1
+            # Consider variants each read in the pair share in common.
+            for var in set(variants1).intersection(set(variants2)):
+                # Only consider variants within the bounds of the block.
+                if var.pos >= start and var.pos <= end:
+                    block_vars[var] = block_vars.get(var, 0) + 1
 
         logging.info("Number of read pairs in block: {}".format(num_pairs))
         logging.info("Number of variants found in block: {}".\
@@ -592,9 +590,8 @@ def write_coverage_data(coverage_file, coverage_info):
 def write_metadata(args, vcf_file):
     """ Write the opening lines of metadata to the vcf file."""
     vcf_file.write("##fileformat=VCFv4.2" + '\n')
-    today = datetime.date.today()
-    vcf_file.write("##fileDate=" + str(today)[:4] + str(today)[5:7] + \
-        str(today)[8:] + '\n')
+    today = str(datetime.date.today())
+    vcf_file.write("##fileDate=" + today[:4] + today[5:7] + today[8:] + '\n')
     vcf_file.write("##source=UNDR ROVER" + '\n')
     vcf_file.write("##INFO=<ID=Sample,Number=1,Type=String,Description=\
 \"Sample Name\">" + '\n')
