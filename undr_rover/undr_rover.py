@@ -4,6 +4,7 @@
 
 from argparse import ArgumentParser
 from Bio import (pairwise2, SeqIO)
+from itertools import takewhile
 from operator import itemgetter
 from pyfaidx import Fasta
 import csv
@@ -239,8 +240,6 @@ def read_fsnvs(args, chrsm, qual, pos, insert_seq, bases):
             # If we just saw an SNV, return 0 as there are now two in a row.
             if check is True:
                 return 0
-            else:
-                check = True
             result.append(SNV(chrsm, pos, [insert_seq[0], bases[0]], '.'))
             if not ((args.qualthresh is None) or (qual[0] >= \
             args.qualthresh)):
@@ -250,6 +249,7 @@ def read_fsnvs(args, chrsm, qual, pos, insert_seq, bases):
             bases = bases[1:]
             qual = qual[1:]
             pos += 1
+            check = True
     return result
 
 def read_rsnvs(args, chrsm, qual, pos, insert_seq, bases):
@@ -272,8 +272,6 @@ def read_rsnvs(args, chrsm, qual, pos, insert_seq, bases):
             # If we just saw an SNV, return 0 as there are now two in a row.
             if check is True:
                 return 0
-            else:
-                check = True
             result.append(SNV(chrsm, pos, [insert_seq[-1], bases[-1]], '.'))
             if not ((args.qualthresh is None) or (qual[-1] >= \
             args.qualthresh)):
@@ -283,6 +281,7 @@ def read_rsnvs(args, chrsm, qual, pos, insert_seq, bases):
             bases = bases[:-1]
             qual = qual[:-1]
             pos -= 1
+            check = True
     return result
 
 def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
@@ -316,13 +315,9 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                 qual = qual[1:]
                 pos += 1
             elif aligned_insert[0] == '-':
-                indel = True # Insertion
-                indel_length = 0
-                for base in aligned_insert:
-                    if base == '-' and indel:
-                        indel_length += 1
-                    else:
-                        indel = False
+                # Insertion
+                indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
+                    aligned_insert))
                 if indel_length >= len(aligned_insert):
                     return result
                 result.append(Insertion(chrsm, pos, \
@@ -336,13 +331,9 @@ def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
                 aligned_insert = aligned_insert[indel_length:]
                 qual = qual[indel_length:]
             elif aligned_read[0] == '-':
-                indel = True # Deletion
-                indel_length = 0
-                for base in aligned_read:
-                    if base == '-' and indel:
-                        indel_length += 1
-                    else:
-                        indel = False
+                # Deletion
+                indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
+                    aligned_read))
                 if indel_length >= len(aligned_insert):
                     return result
                 result.append(Deletion(chrsm, pos, \
@@ -386,13 +377,9 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                 qual = qual[:-1]
                 pos -= 1
             elif aligned_insert[-1] == '-':
-                indel = True # Insertion
-                indel_length = 0
-                for base in aligned_insert[::-1]:
-                    if base == '-' and indel:
-                        indel_length += 1
-                    else:
-                        indel = False
+                # Insertion
+                indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
+                    aligned_insert[::-1]))
                 if indel_length >= len(aligned_insert):
                     return result
                 result.append(Insertion(chrsm, pos + 1, [aligned_read[-1 * \
@@ -407,13 +394,9 @@ def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
                 aligned_insert = aligned_insert[:-1 * indel_length]
                 qual = qual[:-1 * indel_length]
             elif aligned_read[-1] == '-':
-                indel = True # Deletion
-                indel_length = 0
-                for base in aligned_read[::-1]:
-                    if base == '-' and indel:
-                        indel_length += 1
-                    else:
-                        indel = False
+                # Deletion
+                indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
+                    aligned_read[::-1]))
                 if indel_length >= len(aligned_insert):
                     return result
                 result.append(Deletion(chrsm, pos - indel_length + 1, \
@@ -472,7 +455,7 @@ def complete_blocks(args, blocks):
             primer_key = read_bases[:20]
             if primer_key in blocks:
                 if len(blocks[primer_key]) == 9:
-                    # Forward primer matched.
+                    # Possible forward primer matched.
                     fseq = blocks[primer_key][7]
                     if fseq == read_bases[:len(fseq)]:
                         if read.id not in blocks[primer_key][3]:
@@ -482,7 +465,7 @@ def complete_blocks(args, blocks):
                             blocks[primer_key][3][read.id][0] = read
                             blocks[primer_key][3][read.id][2] = len(fseq)
                 elif len(blocks[primer_key]) == 2:
-                    # Reverse primer matched.
+                    # Possible reverse primer matched.
                     rseq = blocks[primer_key][0]
                     if rseq == read_bases[:len(rseq)]:
                         forward_key = blocks[primer_key][1]
@@ -529,12 +512,12 @@ def process_blocks(args, blocks, id_info, vcf_file):
 
                 variants1 = read_fsnvs(args, chrsm, forward_qual, start, \
                     insert, forward_seq)
+                variants2 = read_rsnvs(args, chrsm, reverse_qual, end, \
+                    insert, reverse_seq)
+
                 if variants1 == 0:
                     variants1 = read_fvariants(args, chrsm, forward_qual, \
                         start, insert, forward_seq)
-
-                variants2 = read_rsnvs(args, chrsm, reverse_qual, end, \
-                    insert, reverse_seq)
                 if variants2 == 0:
                     variants2 = read_rvariants(args, chrsm, reverse_qual, end, \
                         insert, reverse_seq)
@@ -550,10 +533,7 @@ amount of variants.".format(read1.id))
                 for var in set(variants1).intersection(set(variants2)):
                     # Only consider variants within the bounds of the block.
                     if var.pos >= start and var.pos <= end:
-                        if var in block_vars:
-                            block_vars[var] += 1
-                        else:
-                            block_vars[var] = 1
+                        block_vars[var] = block_vars.get(var, 0) + 1
 
         logging.info("Number of read pairs in block: {}".format(num_pairs))
         logging.info("Number of variants found in block: {}".\
