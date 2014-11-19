@@ -35,7 +35,27 @@ Requirements: Python 2.7, and the PySam, PyVCF, Pyfaidx and Biopython libraries
 General Description
 --------------------------------------------------------------------------------
 
-<Description>
+Undr Rover enables the user to call variants from FASTQ files directly without
+having to go through a mapping step. 
+
+Reads are organised into blocks, which are initialised from information about
+known primer sequences. For each block, we record the primer's DNA sequence, 
+coordinates and reference insert sequence. Once the reads have been assigned
+to blocks (by matching the bases in their primer region to a known primer), 
+we call variants for each block one at a time. 
+
+The approach Undr Rover takes when processing reads to call variants is to 
+initially assume that all reads contain only single nucleotide variants. If 
+we detect two single nucleotide variants in a row during this variant calling, 
+Undr Rover immediatly ceases this step and instead does a full gapped alignment 
+of the read against the reference insert sequence to detect possible insertions 
+and deletions.
+
+Only variants detected in both reads of a read-pair are considered relevant. 
+User-defined thresholds determine the minimum number and proportion of 
+read-pairs a variant must be observed in for a ‘call’ to be made. Undr Rover 
+additionally reports the depth of coverage across amplicons to facilitate the 
+identification of any regions that may require further screening.
 
 --------------------------------------------------------------------------------
 Command Line Usage
@@ -58,10 +78,10 @@ optional arguments:
     --primer_bases N            Number of bases from primer region to use in
                                 gapped alignment.
     --proportionthresh N        Keep variants which appear in this proportion of
-                                the read pairs for a given target region, and 
+                                the read-pairs for a given target region, and 
                                 bin otherwise. Defaults to 0.05.
     --absthresh N               Only keep variants which appear in at least this
-                                many read pairs. Defaults to 2.
+                                many read-pairs. Defaults to 2.
     --qualthresh N              Minimum base quality score (phred).
     --max_variants N            Maximum amount of variants per read before the
                                 read is discarded. Defaults to 25.
@@ -109,13 +129,13 @@ Explanation of the arguments
 
         Optional. Defaults to 0.05.
 
-        Only keep variants which appear in this proportion of the read pairs for
+        Only keep variants which appear in this proportion of the read-pairs for
         a given target region, and bin otherwise. A variant must appear in
         both reads of a pair to be counted. The proportion is calculated as
         follows:
 
             N = number of pairs containing this variant in both reads
-            T = number of read pairs overlapping the target region
+            T = number of read-pairs overlapping the target region
 
             proportion = N/T
 
@@ -131,9 +151,9 @@ Explanation of the arguments
 
     --absthresh N
 
-        Optional. Defaults to 2 read pairs.
+        Optional. Defaults to 2 read-pairs.
 
-        Only keep variants which appear in at least this many read pairs
+        Only keep variants which appear in at least this many read-pairs
         for a given target region.
 
         See comments above about proportionthresh.
@@ -199,12 +219,12 @@ undr_rover.py   --primer_coords roverfile.txt --primer_sequences primers.txt
                 --coverdir coverage_files sample1*.fastq sample2*.fastq
 
 This assumes that there are two FASTQ files each for sample1* and sample2*, 
-which contain the first and second reads respectively for each read pair. 
+which contain the first and second reads respectively for each read-pair. 
 Roverfile.txt and primers.txt are both TSV format files containing data as 
 described earlier. 
 
 The variants called will be written to the file variant_calls.vcf. Coverage 
-files containing the number of read pairs which mapped to each region will be 
+files containing the number of read-pairs which mapped to each region will be 
 output in coverage_files/sample1.coverage and coverage_files/sample2.coverage.
 A log file describing the actions taken by the program will be stored in 
 log_file.

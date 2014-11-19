@@ -80,30 +80,28 @@ def get_primer_sequences(primer_sequences_file):
 def reverse_complement(sequence):
     """ Return the reverse complement of a DNA string."""
     rc_bases = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'N': 'N'}
-    return "".join([rc_bases[base] for base in sequence[::-1]])
+    return ''.join([rc_bases[base] for base in sequence[::-1]])
 
 def nts(none_string):
-    """ Turns None into an empty string."""
-    if none_string is None:
-        return ''
-    return str(none_string)
+    """ Returns an empty string for None."""
+    return none_string or ''
 
 class Base(object):
     """ A DNA base paired with its quality score."""
     def __init__(self, base, qual):
         self.base = base  # a string
         self.qual = qual  # an int
+    def __eq__(self, other):
+        return self.as_tuple() == other.as_tuple()
+    def __hash__(self):
+        return hash(self.as_tuple)
+    def __repr__(self):
+        return str(self)
+    def __str__(self):
+        return str(self.as_tuple())
     def as_tuple(self):
         """ Return the base and quality score of the base as a tuple."""
         return (self.base, self.qual)
-    def __eq__(self, other):
-        return self.as_tuple() == other.as_tuple()
-    def __str__(self):
-        return str(self.as_tuple())
-    def __repr__(self):
-        return str(self)
-    def __hash__(self):
-        return hash(self.as_tuple)
 
 class SNV(object):
     """ Single nucleotide variant. Bases are represented as DNA strings."""
@@ -115,18 +113,21 @@ class SNV(object):
         self.qual = qual
         self.filter_reason = None
         self.info = []
+    def __eq__(self, other):
+        return self.as_tuple() == other.as_tuple()
+    def __hash__(self):
+        return hash(self.as_tuple())
+    def __repr__(self):
+        return str(self)
     def __str__(self):
         return "S: {} {} {} {}".format(self.chrsm, self.pos, self.ref_base, \
             self.seq_base)
-    def __repr__(self):
-        return str(self)
     def as_tuple(self):
         """ Return information about the SNV as a 4-tuple."""
         return (self.chrsm, self.pos, self.ref_base, self.seq_base)
-    def __hash__(self):
-        return hash(self.as_tuple())
-    def __eq__(self, other):
-        return self.as_tuple() == other.as_tuple()
+    def position(self):
+        """ SNV POS."""
+        return self.pos
     def ref(self):
         """ REF base."""
         return self.ref_base
@@ -138,11 +139,7 @@ class SNV(object):
         being discarded otherwise."""
         if self.filter_reason is None:
             return "PASS"
-        else:
-            return self.filter_reason[1:]
-    def position(self):
-        """ SNV POS."""
-        return self.pos
+        return self.filter_reason[1:]
 
 class Insertion(object):
     """ Insertion. Bases are represented as DNA strings."""
@@ -154,17 +151,20 @@ class Insertion(object):
         self.filter_reason = None
         self.info = []
         self.context = bases[1]
-    def __str__(self):
-        return "I: {} {} {}".format(self.chrsm, self.pos, self.inserted_bases)
+    def __eq__(self, other):
+        return self.as_tuple() == other.as_tuple()
+    def __hash__(self):
+        return hash(self.as_tuple())
     def __repr__(self):
         return str(self)
+    def __str__(self):
+        return "I: {} {} {}".format(self.chrsm, self.pos, self.inserted_bases)
     def as_tuple(self):
         """ Return information about the insertion as a 3-tuple."""
         return (self.chrsm, self.pos, self.inserted_bases)
-    def __hash__(self):
-        return hash(self.as_tuple())
-    def __eq__(self, other):
-        return self.as_tuple() == other.as_tuple()
+    def position(self):
+        """ Insertion POS."""
+        return self.pos - 1
     def ref(self):
         """ REF base."""
         return self.context
@@ -176,11 +176,7 @@ class Insertion(object):
         being discarded otherwise."""
         if self.filter_reason is None:
             return "PASS"
-        else:
-            return self.filter_reason[1:]
-    def position(self):
-        """ Insertion POS."""
-        return self.pos - 1
+        return self.filter_reason[1:]
 
 class Deletion(object):
     """ Deletion. Bases are represented as DNA strings."""
@@ -192,17 +188,20 @@ class Deletion(object):
         self.filter_reason = None
         self.info = []
         self.context = bases[1]
-    def __str__(self):
-        return "D: {} {} {}".format(self.chrsm, self.pos, self.deleted_bases)
+    def __eq__(self, other):
+        return self.as_tuple() == other.as_tuple()
+    def __hash__(self):
+        return hash(self.as_tuple())
     def __repr__(self):
         return str(self)
+    def __str__(self):
+        return "D: {} {} {}".format(self.chrsm, self.pos, self.deleted_bases)
     def as_tuple(self):
         """ Return infromation about the deletion as a 3-tuple."""
         return (self.chrsm, self.pos, self.deleted_bases)
-    def __hash__(self):
-        return hash(self.as_tuple())
-    def __eq__(self, other):
-        return self.as_tuple() == other.as_tuple()
+    def position(self):
+        """ Deletion POS."""
+        return self.pos - 1
     def ref(self):
         """ REF (deleted) bases."""
         return self.context + self.deleted_bases
@@ -214,11 +213,7 @@ class Deletion(object):
         being discarded otherwise."""
         if self.filter_reason is None:
             return "PASS"
-        else:
-            return self.filter_reason[1:]
-    def position(self):
-        """ Deletion POS."""
-        return self.pos - 1
+        return self.filter_reason[1:]
 
 def read_fsnvs(args, chrsm, qual, pos, insert_seq, bases):
     """ Find all SNV's in a forward read. 0 if we find two SNV's in a row."""
