@@ -228,20 +228,20 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
             qual = qual[new]
             pos += direction
             check = 1
-    return result
+    return 0
 
 def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
     """ Find all the variants in a read (SNVs, Insertions, Deletions)."""
     pos -= args.primer_bases * direction
     result = []
-    # Initialise the relevant indices given the direction of the read.
-    i = 0 if direction == 1 else -1
-    new = slice(1, None) if direction == 1 else slice(None, -1)
     # Pairwise2 uses a C implementation of the Needleman-Wunsch algorithm.
     aligned_insert, aligned_read = pairwise2.align.globalms(insert_seq, bases, \
         2, 0, -2, -1, penalize_end_gaps=(0, 0), one_alignment_only=1)[0][:2]
     context = '-'
     while aligned_insert and aligned_read:
+        # Initialise the relevant indices given the direction of the read.
+        i = 0 if direction == 1 else -1
+        new = slice(1, None) if direction == 1 else slice(None, -1)
         if aligned_insert[i] == aligned_read[i]:
             context = aligned_insert[i]
             aligned_insert = aligned_insert[new]
@@ -266,7 +266,7 @@ def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
                 # Insertion
                 indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
                     aligned_insert[::direction]))
-                skip = slice(indel_length, None) if direction == 1 else \
+                new = slice(indel_length, None) if direction == 1 else \
                 slice(None, -1 * indel_length)
                 if indel_length >= len(aligned_insert):
                     return result
@@ -279,17 +279,17 @@ def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
                         indel_length - 1]], '.'))
                 # insertion with QUAL data?
                 if not ((args.qualthresh is None) or all([b >= \
-                args.qualthresh for b in qual[skip]])):
+                args.qualthresh for b in qual[new]])):
                     result[-1].filter_reason = ''.join([nts(result[-1].\
                     filter_reason), ";qlt"])
-                aligned_read = aligned_read[skip]
-                aligned_insert = aligned_insert[skip]
-                qual = qual[skip]
+                aligned_read = aligned_read[new]
+                aligned_insert = aligned_insert[new]
+                qual = qual[new]
             elif aligned_read[i] == '-':
                 # Deletion
                 indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
                     aligned_read[::direction]))
-                skip = slice(indel_length, None) if direction == 1 else \
+                new = slice(indel_length, None) if direction == 1 else \
                 slice(None, -1 * indel_length)
                 if indel_length >= len(aligned_insert):
                     return result
@@ -306,8 +306,8 @@ def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
                     result[-1].filter_reason = ''.join([nts(result[-1].\
                     filter_reason), ";qlt"])
                 context = aligned_insert[indel_length - 1]
-                aligned_insert = aligned_insert[skip]
-                aligned_read = aligned_read[skip]
+                aligned_insert = aligned_insert[new]
+                aligned_read = aligned_read[new]
                 pos += indel_length * direction
     return result
 
