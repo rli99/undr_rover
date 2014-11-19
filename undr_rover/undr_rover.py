@@ -193,6 +193,8 @@ class Deletion(Variant):
 def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     """ Find all the SNV's in a read. 0 if we find two SNV's within a certain
     distance from each other."""
+    # If --thorough is set, any reads in which 2 SNV's are detected will undergo
+    # a complete gapped alignment instead.
     min_distance = len(insert_seq) if args.thorough else 1
     check = min_distance
     pos -= args.primer_bases * direction
@@ -228,7 +230,7 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
             qual = qual[new]
             pos += direction
             check = 1
-    return 0
+    return result
 
 def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
     """ Find all the variants in a read (SNVs, Insertions, Deletions)."""
