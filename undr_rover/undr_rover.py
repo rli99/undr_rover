@@ -58,9 +58,11 @@ def parse_args():
         required=True, help='Name of output file containing called variants.')
     parser.add_argument('--log', metavar='FILE', type=str, \
         help='Logs progress in specified file, defaults to stdout.')
-    parser.add_argument('--coverdir', required=False, \
+    parser.add_argument('--coverdir', \
         help='Directory to write coverage files, defaults to current working \
         directory.')
+    parser.add_argument('--thorough', action='store_true', default=False, \
+        help='Use gapped alignment more often.')
     parser.add_argument('fastqs', nargs='+', type=str, \
         help='Fastq files containing reads.')
     return parser.parse_args()
@@ -105,7 +107,7 @@ class Base(object):
 
 class Variant(object):
     """ Parent class representing all variants."""
-    def __init__(self, chrsm, pos, bases, qual):
+    def __init__(self, chrsm, pos, _, qual):
         self.chrsm = chrsm
         self.pos = pos
         self.qual = qual
@@ -189,8 +191,10 @@ class Deletion(Variant):
         return self.context
 
 def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
-    """ Find all the SNV's in a read. 0 if we find two SNV's in a row."""
-    check = False
+    """ Find all the SNV's in a read. 0 if we find two SNV's within a certain
+    distance from each other."""
+    min_distance = len(insert_seq) if args.thorough else 1
+    check = min_distance
     pos -= args.primer_bases * direction
     result = []
     # Initiate the relevant indices given the direction of the read.
@@ -208,11 +212,11 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
             insert_seq = insert_seq[new]
             bases = bases[new]
             qual = qual[new]
-            check = False
+            check += 1
             pos += direction
         else:
-            # If we just saw an SNV, return 0 as there are now two in a row.
-            if check is True:
+            # If we have seen an SNV within a certain distance prior, return 0.
+            if check <= min_distance:
                 return 0
             result.append(SNV(chrsm, pos, [insert_seq[i], bases[i]], '.'))
             if not ((args.qualthresh is None) or (qual[i] >= \
@@ -223,7 +227,7 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
             bases = bases[new]
             qual = qual[new]
             pos += direction
-            check = True
+            check = 1
     return result
 
 def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
