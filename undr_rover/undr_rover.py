@@ -135,7 +135,7 @@ class SNV(object):
         """ ALT base."""
         return self.seq_base
     def fil(self):
-        """ Return "PASS" if the SNV is not filtered, or the reason for
+        """ Return "PASS" if the SNV is not filtered, or the reason(s) for
         being discarded otherwise."""
         if self.filter_reason is None:
             return "PASS"
@@ -172,7 +172,7 @@ class Insertion(object):
         """ ALT (inserted) bases."""
         return self.context + self.inserted_bases
     def fil(self):
-        """ Return "PASS" if the Insertion is not filtered, or the reason for
+        """ Return "PASS" if the Insertion is not filtered, or the reason(s) for
         being discarded otherwise."""
         if self.filter_reason is None:
             return "PASS"
@@ -209,202 +209,129 @@ class Deletion(object):
         """ ALT base."""
         return self.context
     def fil(self):
-        """ Return "PASS" if the Deletion is not filtered, or the reason for
+        """ Return "PASS" if the Deletion is not filtered, or the reason(s) for
         being discarded otherwise."""
         if self.filter_reason is None:
             return "PASS"
         return self.filter_reason[1:]
 
-def read_fsnvs(args, chrsm, qual, pos, insert_seq, bases):
-    """ Find all SNV's in a forward read. 0 if we find two SNV's in a row."""
+def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
+    """ Find all the SNV's in a read. 0 if we find two SNV's in a row."""
     check = False
-    pos -= args.primer_bases
+    pos -= args.primer_bases * direction
     result = []
-    # Identical insert sequence and read, so there are no variants.
-    if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
-    bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
+    # Initiate the relevant indices given the direction of the read.
+    i = 0 if direction == 1 else -1
+    new = slice(1, None) if direction == 1 else slice(None, -1)
+    # Check for identical insert sequence and read (no variants).
+    if direction == 1 and insert_seq[args.primer_bases:-1 * args.primer_bases] \
+    == bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
+        return result
+    if direction == -1 and insert_seq[args.primer_bases:-1 * args.primer_bases]\
+     == bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
         return result
     while insert_seq and bases:
-        if insert_seq[0] == bases[0]:
-            insert_seq = insert_seq[1:]
-            bases = bases[1:]
-            qual = qual[1:]
+        if insert_seq[i] == bases[i]:
+            insert_seq = insert_seq[new]
+            bases = bases[new]
+            qual = qual[new]
             check = False
-            pos += 1
+            pos += direction
         else:
             # If we just saw an SNV, return 0 as there are now two in a row.
             if check is True:
                 return 0
-            result.append(SNV(chrsm, pos, [insert_seq[0], bases[0]], '.'))
-            if not ((args.qualthresh is None) or (qual[0] >= \
+            result.append(SNV(chrsm, pos, [insert_seq[i], bases[i]], '.'))
+            if not ((args.qualthresh is None) or (qual[i] >= \
             args.qualthresh)):
                 result[-1].filter_reason = ''.join([nts(result[-1].\
                     filter_reason), ";qlt"])
-            insert_seq = insert_seq[1:]
-            bases = bases[1:]
-            qual = qual[1:]
-            pos += 1
+            insert_seq = insert_seq[new]
+            bases = bases[new]
+            qual = qual[new]
+            pos += direction
             check = True
     return result
 
-def read_rsnvs(args, chrsm, qual, pos, insert_seq, bases):
-    """ Find all SNV's in a reverse read. 0 if we find two SNV's in a row."""
-    check = False
-    pos += args.primer_bases
+def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
+    """ Find all the variants in a read (SNVs, Insertions, Deletions)."""
+    pos -= args.primer_bases * direction
     result = []
-    # Identical insert sequence and read, so there are no variants.
-    if insert_seq[args.primer_bases:-1 * args.primer_bases] == \
-    bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
-        return result
-    while insert_seq and bases:
-        if insert_seq[-1] == bases[-1]:
-            insert_seq = insert_seq[:-1]
-            bases = bases[:-1]
-            qual = qual[:-1]
-            check = False
-            pos -= 1
-        else:
-            # If we just saw an SNV, return 0 as there are now two in a row.
-            if check is True:
-                return 0
-            result.append(SNV(chrsm, pos, [insert_seq[-1], bases[-1]], '.'))
-            if not ((args.qualthresh is None) or (qual[-1] >= \
-            args.qualthresh)):
-                result[-1].filter_reason = ''.join([nts(result[-1].\
-                    filter_reason), ";qlt"])
-            insert_seq = insert_seq[:-1]
-            bases = bases[:-1]
-            qual = qual[:-1]
-            pos -= 1
-            check = True
-    return result
-
-def read_fvariants(args, chrsm, qual, pos, insert_seq, bases):
-    """ Find all the variants in a forward read (SNVs, Insertions,
-    Deletions)."""
-    pos -= args.primer_bases
-    result = []
+    # Initialise the relevant indices given the direction of the read.
+    i = 0 if direction == 1 else -1
+    new = slice(1, None) if direction == 1 else slice(None, -1)
     # Pairwise2 uses a C implementation of the Needleman-Wunsch algorithm.
     aligned_insert, aligned_read = pairwise2.align.globalms(insert_seq, bases, \
         2, 0, -2, -1, penalize_end_gaps=(0, 0), one_alignment_only=1)[0][:2]
     context = '-'
     while aligned_insert and aligned_read:
-        if aligned_insert[0] == aligned_read[0]:
-            context = aligned_insert[0]
-            aligned_insert = aligned_insert[1:]
-            aligned_read = aligned_read[1:]
-            qual = qual[1:]
-            pos += 1
+        if aligned_insert[i] == aligned_read[i]:
+            context = aligned_insert[i]
+            aligned_insert = aligned_insert[new]
+            aligned_read = aligned_read[new]
+            qual = qual[new]
+            pos += direction
         else:
-            if not (aligned_insert[0] == '-' or aligned_read[0] == '-'):
+            if not (aligned_insert[i] == '-' or aligned_read[i] == '-'):
                 # Single Nucleotide Variation
-                result.append(SNV(chrsm, pos, [aligned_insert[0], \
-                    aligned_read[0]], '.'))
-                if not ((args.qualthresh is None) or (qual[0] >= \
+                result.append(SNV(chrsm, pos, [aligned_insert[i], \
+                    aligned_read[i]], '.'))
+                if not ((args.qualthresh is None) or (qual[i] >= \
                 args.qualthresh)):
                     result[-1].filter_reason = ''.join([nts(result[-1].\
                         filter_reason), ";qlt"])
-                context = aligned_insert[0]
-                aligned_insert = aligned_insert[1:]
-                aligned_read = aligned_read[1:]
-                qual = qual[1:]
-                pos += 1
-            elif aligned_insert[0] == '-':
+                context = aligned_insert[i]
+                aligned_insert = aligned_insert[new]
+                aligned_read = aligned_read[new]
+                qual = qual[new]
+                pos += direction
+            elif aligned_insert[i] == '-':
                 # Insertion
                 indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
-                    aligned_insert))
+                    aligned_insert[::direction]))
+                skip = slice(indel_length, None) if direction == 1 else \
+                slice(None, -1 * indel_length)
                 if indel_length >= len(aligned_insert):
                     return result
-                result.append(Insertion(chrsm, pos, \
+                if direction == 1:
+                    result.append(Insertion(chrsm, pos, \
                     [aligned_read[:indel_length], context], '.'))
+                else:
+                    result.append(Insertion(chrsm, pos + 1, [aligned_read[-1 * \
+                        indel_length:], aligned_insert[-1 * \
+                        indel_length - 1]], '.'))
                 # insertion with QUAL data?
                 if not ((args.qualthresh is None) or all([b >= \
-                args.qualthresh for b in qual[indel_length:]])):
+                args.qualthresh for b in qual[skip]])):
                     result[-1].filter_reason = ''.join([nts(result[-1].\
                     filter_reason), ";qlt"])
-                aligned_read = aligned_read[indel_length:]
-                aligned_insert = aligned_insert[indel_length:]
-                qual = qual[indel_length:]
-            elif aligned_read[0] == '-':
+                aligned_read = aligned_read[skip]
+                aligned_insert = aligned_insert[skip]
+                qual = qual[skip]
+            elif aligned_read[i] == '-':
                 # Deletion
                 indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
-                    aligned_read))
+                    aligned_read[::direction]))
+                skip = slice(indel_length, None) if direction == 1 else \
+                slice(None, -1 * indel_length)
                 if indel_length >= len(aligned_insert):
                     return result
-                result.append(Deletion(chrsm, pos, \
+                if direction == 1:
+                    result.append(Deletion(chrsm, pos, \
                     [aligned_insert[:indel_length], context], '.'))
+                else:
+                    result.append(Deletion(chrsm, pos - indel_length + 1, \
+                        [aligned_insert[-1 * indel_length:], aligned_insert\
+                        [-1 * indel_length - 1]], '.'))
                 # deletion with QUAL data?
-                if not ((args.qualthresh is None) or (qual[0] >= \
+                if not ((args.qualthresh is None) or (qual[i] >= \
                 args.qualthresh)):
                     result[-1].filter_reason = ''.join([nts(result[-1].\
                     filter_reason), ";qlt"])
                 context = aligned_insert[indel_length - 1]
-                aligned_insert = aligned_insert[indel_length:]
-                aligned_read = aligned_read[indel_length:]
-                pos += indel_length
-    return result
-
-def read_rvariants(args, chrsm, qual, pos, insert_seq, bases):
-    """ Find all the variants in a reverse read (SNVs, Insertions,
-        Deletions)."""
-    pos += args.primer_bases
-    result = []
-    # Pairwise2 uses a C implementation of the Needleman-Wunsch algorithm.
-    aligned_insert, aligned_read = pairwise2.align.globalms(insert_seq, bases, \
-        2, 0, -2, -1, penalize_end_gaps=(0, 0), one_alignment_only=1)[0][:2]
-    while aligned_insert and aligned_read:
-        if aligned_insert[-1] == aligned_read[-1]:
-            aligned_insert = aligned_insert[:-1]
-            aligned_read = aligned_read[:-1]
-            qual = qual[:-1]
-            pos -= 1
-        else:
-            if not (aligned_insert[-1] == '-' or aligned_read[-1] == '-'):
-                # Single Nucleotide Variation
-                result.append(SNV(chrsm, pos, [aligned_insert[-1], \
-                    aligned_read[-1]], '.'))
-                if not ((args.qualthresh is None) or (qual[-1] >= \
-                args.qualthresh)):
-                    result[-1].filter_reason = ''.join([nts(result[-1].\
-                        filter_reason), ";qlt"])
-                aligned_insert = aligned_insert[:-1]
-                aligned_read = aligned_read[:-1]
-                qual = qual[:-1]
-                pos -= 1
-            elif aligned_insert[-1] == '-':
-                # Insertion
-                indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
-                    aligned_insert[::-1]))
-                if indel_length >= len(aligned_insert):
-                    return result
-                result.append(Insertion(chrsm, pos + 1, [aligned_read[-1 * \
-                    indel_length:], aligned_insert[-1 * indel_length - 1]], \
-                    '.'))
-                # insertion with QUAL data?
-                if not ((args.qualthresh is None) or all([b >= args.qualthresh \
-                for b in qual[:-1 * indel_length]])):
-                    result[-1].filter_reason = ''.join([nts(result[-1].\
-                    filter_reason), ";qlt"])
-                aligned_read = aligned_read[:-1 * indel_length]
-                aligned_insert = aligned_insert[:-1 * indel_length]
-                qual = qual[:-1 * indel_length]
-            elif aligned_read[-1] == '-':
-                # Deletion
-                indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
-                    aligned_read[::-1]))
-                if indel_length >= len(aligned_insert):
-                    return result
-                result.append(Deletion(chrsm, pos - indel_length + 1, \
-                    [aligned_insert[-1 * indel_length:], aligned_insert\
-                    [-1 * indel_length - 1]], '.'))
-                # deletion with QUAL data?
-                if not ((args.qualthresh is None) or (qual[-1] >= \
-                args.qualthresh)):
-                    result[-1].filter_reason = ''.join([nts(result[-1].\
-                    filter_reason), ";qlt"])
-                aligned_insert = aligned_insert[:-1 * indel_length]
-                aligned_read = aligned_read[:-1 * indel_length]
-                pos -= indel_length
+                aligned_insert = aligned_insert[skip]
+                aligned_read = aligned_read[skip]
+                pos += indel_length * direction
     return result
 
 def initialise_blocks(args):
@@ -503,17 +430,17 @@ def process_blocks(args, blocks, id_info, vcf_file):
             # nucleotide variants. If we detect successive SNV's in those
             # reads, we go back and do the gapped alignment.
 
-            variants1 = read_fsnvs(args, chrsm, forward_qual, start, \
-                insert, forward_seq)
-            variants2 = read_rsnvs(args, chrsm, reverse_qual, end, \
-                insert, reverse_seq)
+            variants1 = read_snvs(args, chrsm, forward_qual, start, \
+                insert, forward_seq, 1)
+            variants2 = read_snvs(args, chrsm, reverse_qual, end, \
+                insert, reverse_seq, -1)
 
             if variants1 == 0:
-                variants1 = read_fvariants(args, chrsm, forward_qual, \
-                    start, insert, forward_seq)
+                variants1 = read_variants(args, chrsm, forward_qual, \
+                    start, insert, forward_seq, 1)
             if variants2 == 0:
-                variants2 = read_rvariants(args, chrsm, reverse_qual, end, \
-                    insert, reverse_seq)
+                variants2 = read_variants(args, chrsm, reverse_qual, end, \
+                    insert, reverse_seq, -1)
 
             # Ignore reads which have an unusually high amount of variants.
             if len(variants1) > args.max_variants or len(variants2) > \
