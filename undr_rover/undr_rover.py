@@ -103,13 +103,11 @@ class Base(object):
         """ Return the base and quality score of the base as a tuple."""
         return (self.base, self.qual)
 
-class SNV(object):
-    """ Single nucleotide variant. Bases are represented as DNA strings."""
+class Variant(object):
+    """ Parent class representing all variants."""
     def __init__(self, chrsm, pos, bases, qual):
         self.chrsm = chrsm
         self.pos = pos
-        self.ref_base = bases[0]
-        self.seq_base = bases[1]
         self.qual = qual
         self.filter_reason = None
         self.info = []
@@ -119,6 +117,19 @@ class SNV(object):
         return hash(self.as_tuple())
     def __repr__(self):
         return str(self)
+    def fil(self):
+        """ Return "PASS" if the Deletion is not filtered, or the reason(s) for
+        being discarded otherwise."""
+        if self.filter_reason is None:
+            return "PASS"
+        return self.filter_reason[1:]
+
+class SNV(Variant):
+    """ Single nucleotide variant. Bases are represented as DNA strings."""
+    def __init__(self, chrsm, pos, bases, qual):
+        super(SNV, self).__init__(chrsm, pos, bases, qual)
+        self.ref_base = bases[0]
+        self.seq_base = bases[1]
     def __str__(self):
         return "S: {} {} {} {}".format(self.chrsm, self.pos, self.ref_base, \
             self.seq_base)
@@ -134,29 +145,13 @@ class SNV(object):
     def alt(self):
         """ ALT base."""
         return self.seq_base
-    def fil(self):
-        """ Return "PASS" if the SNV is not filtered, or the reason(s) for
-        being discarded otherwise."""
-        if self.filter_reason is None:
-            return "PASS"
-        return self.filter_reason[1:]
 
-class Insertion(object):
+class Insertion(Variant):
     """ Insertion. Bases are represented as DNA strings."""
     def __init__(self, chrsm, pos, bases, qual):
-        self.chrsm = chrsm
-        self.pos = pos
+        super(Insertion, self).__init__(chrsm, pos, bases, qual)
         self.inserted_bases = bases[0]
-        self.qual = qual
-        self.filter_reason = None
-        self.info = []
         self.context = bases[1]
-    def __eq__(self, other):
-        return self.as_tuple() == other.as_tuple()
-    def __hash__(self):
-        return hash(self.as_tuple())
-    def __repr__(self):
-        return str(self)
     def __str__(self):
         return "I: {} {} {}".format(self.chrsm, self.pos, self.inserted_bases)
     def as_tuple(self):
@@ -171,29 +166,13 @@ class Insertion(object):
     def alt(self):
         """ ALT (inserted) bases."""
         return self.context + self.inserted_bases
-    def fil(self):
-        """ Return "PASS" if the Insertion is not filtered, or the reason(s) for
-        being discarded otherwise."""
-        if self.filter_reason is None:
-            return "PASS"
-        return self.filter_reason[1:]
 
-class Deletion(object):
+class Deletion(Variant):
     """ Deletion. Bases are represented as DNA strings."""
     def __init__(self, chrsm, pos, bases, qual):
-        self.chrsm = chrsm
-        self.pos = pos
+        super(Deletion, self).__init__(chrsm, pos, bases, qual)
         self.deleted_bases = bases[0]
-        self.qual = qual
-        self.filter_reason = None
-        self.info = []
         self.context = bases[1]
-    def __eq__(self, other):
-        return self.as_tuple() == other.as_tuple()
-    def __hash__(self):
-        return hash(self.as_tuple())
-    def __repr__(self):
-        return str(self)
     def __str__(self):
         return "D: {} {} {}".format(self.chrsm, self.pos, self.deleted_bases)
     def as_tuple(self):
@@ -208,12 +187,6 @@ class Deletion(object):
     def alt(self):
         """ ALT base."""
         return self.context
-    def fil(self):
-        """ Return "PASS" if the Deletion is not filtered, or the reason(s) for
-        being discarded otherwise."""
-        if self.filter_reason is None:
-            return "PASS"
-        return self.filter_reason[1:]
 
 def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     """ Find all the SNV's in a read. 0 if we find two SNV's in a row."""
