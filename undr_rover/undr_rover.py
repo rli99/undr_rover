@@ -345,16 +345,17 @@ def initialise_blocks(args):
         primer_sequences[block[3]][:20]]
     return blocks
 
-def complete_blocks(args, blocks):
+def complete_blocks(args, blocks, fastq_pair):
     """ Organise reads into blocks."""
-    for fastq_file in args.fastqs:
-        base = os.path.basename(fastq_file)
-        sample = base.split('_')
-        if len(sample) > 0:
-            sample = '_'.join(sample[:3])
-        else:
-            exit('Cannot deduce sample name from fastq filename {}'.\
-                format(fastq_file))
+    base = os.path.basename(fastq_pair[0])
+    sample = base.split('_')
+    if len(sample) > 0:
+        sample = '_'.join(sample[:3])
+        logging.info("Processing sample {}.".format(sample))
+    else:
+        exit('Cannot deduce sample name from fastq filename {}'.\
+            format(fastq_file))
+    for fastq_file in fastq_pair:
         for read in SeqIO.parse(fastq_file, 'fastq'):
             # Try to match each read with an expected primer.
             read_bases = str(read.seq)
@@ -381,13 +382,13 @@ def complete_blocks(args, blocks):
                         blocks[forward_key][3][read.id][1] = read
                         blocks[forward_key][3][read.id][3] = len(rseq)
     # For the next stage, we only need the actual blocks.
-    return [b[:5] for b in blocks.values() if len(b) > 2]
+    return [b[:6] for b in blocks.values() if len(b) > 2]
 
 def process_blocks(args, blocks, id_info, vcf_file):
     """ Variant calling stage. Process blocks one at a time and call variants
     for each block."""
     coverage_info = []
-    for block_info in blocks:
+    for block_info in sorted(blocks, key=itemgetter(5)):
         block_vars = {}
         num_pairs = 0
         chrsm, start, end, reads, insert_seq = block_info[:5]
@@ -411,8 +412,8 @@ def process_blocks(args, blocks, id_info, vcf_file):
             reverse_seq = reverse_complement(str(reverse_bases)).upper()
 
             # For both reads, we initially assume that they only have single
-            # nucleotide variants. If we detect successive SNV's in those
-            # reads, we go back and do the gapped alignment.
+            # nucleotide variants. If we detect results which may suggest
+            # otherwise, we go to a gapped alignment.
 
             variants1 = read_snvs(args, chrsm, forward_qual, start, \
                 insert, forward_seq, 1)
@@ -528,16 +529,18 @@ def main():
             datefmt='%a, %d %b %Y %H:%M:%S')
     logging.info('Program started.')
     logging.info('Command line: {}'.format(' '.join(sys.argv)))
-    with open(args.out, 'w') as vcf_file:
+    clear = open(args.out, 'w')
+    with open(args.out, 'a') as vcf_file:
         if args.id_info:
             vcf_reader = vcf.Reader(filename=args.id_info)
         else:
             vcf_reader = None
         write_metadata(args, vcf_file)
         vcf_file.write(OUTPUT_HEADER + '\n')
-        blocks = initialise_blocks(args)
-        final_blocks = complete_blocks(args, blocks)
-        process_blocks(args, final_blocks, vcf_reader, vcf_file)
+        for fastq_pair in zip(*[iter(args.fastqs)]*2):
+            blocks = initialise_blocks(args)
+            final_blocks = complete_blocks(args, blocks, fastq_pair)
+            process_blocks(args, final_blocks, vcf_reader, vcf_file)
 
 if __name__ == '__main__':
     main()
