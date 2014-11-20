@@ -18,6 +18,7 @@ DEFAULT_ABSOLUTE_THRESHOLD = 2
 DEFAULT_MAX_VARIANTS = 25
 DEFAULT_PRIMER_BASES = 3
 DEFAULT_PROPORTION_THRESHOLD = 0.05
+DEFAULT_SNV_THRESHOLD = 1
 OUTPUT_HEADER = '\t'.join(["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", \
     "FILTER", "INFO"])
 
@@ -63,6 +64,10 @@ def parse_args():
         directory.')
     parser.add_argument('--thorough', action='store_true', default=False, \
         help='Use gapped alignment more often.')
+    parser.add_argument('--snvthresh', metavar='N', type=int, \
+        default=DEFAULT_SNV_THRESHOLD, \
+        help='Distance between two single nucleotide variants before going to \
+        a gapped alignment.')
     parser.add_argument('fastqs', nargs='+', type=str, \
         help='Fastq files containing reads.')
     return parser.parse_args()
@@ -195,7 +200,7 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     distance from each other."""
     # If --thorough is set, any reads in which 2 SNV's are detected will undergo
     # a complete gapped alignment instead.
-    min_distance = len(insert_seq) if args.thorough else 1
+    min_distance = len(insert_seq) if args.thorough else args.snvthresh
     check = min_distance
     pos -= args.primer_bases * direction
     result = []
