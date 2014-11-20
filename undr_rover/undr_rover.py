@@ -345,7 +345,7 @@ def initialise_blocks(args):
         primer_sequences[block[3]][:20]]
     return blocks
 
-def complete_blocks(args, blocks, fastq_pair):
+def complete_blocks(blocks, fastq_pair):
     """ Organise reads into blocks."""
     base = os.path.basename(fastq_pair[0])
     sample = base.split('_')
@@ -354,7 +354,7 @@ def complete_blocks(args, blocks, fastq_pair):
         logging.info("Processing sample {}.".format(sample))
     else:
         exit('Cannot deduce sample name from fastq filename {}'.\
-            format(fastq_file))
+            format(fastq_pair[0]))
     for fastq_file in fastq_pair:
         for read in SeqIO.parse(fastq_file, 'fastq'):
             # Try to match each read with an expected primer.
@@ -529,7 +529,7 @@ def main():
             datefmt='%a, %d %b %Y %H:%M:%S')
     logging.info('Program started.')
     logging.info('Command line: {}'.format(' '.join(sys.argv)))
-    clear = open(args.out, 'w')
+    open(args.out, 'w').close()
     with open(args.out, 'a') as vcf_file:
         if args.id_info:
             vcf_reader = vcf.Reader(filename=args.id_info)
@@ -539,7 +539,7 @@ def main():
         vcf_file.write(OUTPUT_HEADER + '\n')
         for fastq_pair in zip(*[iter(args.fastqs)]*2):
             blocks = initialise_blocks(args)
-            final_blocks = complete_blocks(args, blocks, fastq_pair)
+            final_blocks = complete_blocks(blocks, fastq_pair)
             process_blocks(args, final_blocks, vcf_reader, vcf_file)
 
 if __name__ == '__main__':
