@@ -64,7 +64,8 @@ Command Line Usage
 usage: undr_rover [-h] --primer_coords PRIMERS --primer_sequences SEQ
                   [--primer_bases N] [--proportionthresh N] [--absthresh N]
                   [--qualthresh N] [--max_variants N] --reference FILE
-                  [--id_info FILE] --out FILE [--log FILE] [--coverdir COVERDIR]
+                  [--id_info FILE] [--thorough] [--snvthresh N]
+                  --out FILE [--log FILE] [--coverdir COVERDIR]
                   fastqs [fastqs ...]
 
 positional arguments:
@@ -87,6 +88,13 @@ optional arguments:
                                 read is discarded. Defaults to 25.
     --reference FILE            Reference sequences in FASTA format.
     --id_info FILE              File containing rs ID information in vcf format.
+    --thorough                  If this parameter is set, gapped alignment will
+                                be used for all reads in which 2 or more SNV's
+                                are found. Defaults to False.
+    --snvthresh N               Only applicable if --thorough is not set. Gapped
+                                alignment will be used for reads which have 2 
+                                SNV's within N bases of each other. Defaults
+                                to 1. 
     --out FILE                  Output file containing called variants.
     --log FILE                  Logs progress in specified file, defaults to 
                                 stdout.
@@ -191,6 +199,24 @@ Explanation of the arguments
         output VCF file if it can find the relevant number in DBSNP, which is a 
         vcf format file containing rs numbers for known variants in .vcf.gz 
         format with an accompanying .tbi file (created by tabix).
+
+    --thorough
+
+        Optional. Defaults to False.
+
+        If set, any reads which contain 2 or more SNV's will be
+        considered to possibly contain indels, and therefore gapped alignment
+        will be performed for those reads. Causes a noticeable slowdown in the
+        expected running time of Undr Rover.
+
+    --snvthresh N
+
+        Optional. Defaults to 1.
+
+        If --thorough is not set, gapped alignment will be performed on reads
+        which contain SNV's within N bases of each other. The default setting
+        of 1 allows for the fastest run-time and should provide a sufficient 
+        level of accuracy in the majority of cases.
      
     --coverdir COVERDIR
 

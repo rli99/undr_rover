@@ -328,27 +328,29 @@ def initialise_blocks(args):
     primer_info = get_primer_sequences(args.primer_sequences)
     reference = Fasta(args.reference)
     for primer in primer_info:
+        # Initiates a dictionary containing containing primer sequences.
         primer_sequences[primer[0]] = primer[1]
     for block in block_coords:
-        # Take some extra bases to help with the variant calling near the edges
-        # of the block.
+        # Get the insert sequence. Take some extra bases to help with the
+        # variant calling near the edges of the block.
         ref_sequence = reference[block[0]][int(block[1]) - 1 - \
         args.primer_bases:int(block[2]) + args.primer_bases]
         # Actual block, for which the key is the first 20 bases of the forward
-        # primer.
+        # primer. Value contains [chr, start, end, {reads}, insert_seq, forward
+        # primer name, reverse primer name, forward primer sequence, reverse
+        # primer sequence]
         blocks[primer_sequences[block[3]][:20]] = [block[0], block[1], \
         block[2], {}, str(ref_sequence), block[3], block[4], \
         primer_sequences[block[3]], primer_sequences[block[4]]]
         # Reverse primer (not an actual block), contains the key for the forward
-        # primer.
+        # primer. Redirects to forward primer block.
         blocks[primer_sequences[block[4]][:20]] = [primer_sequences[block[4]], \
         primer_sequences[block[3]][:20]]
     return blocks
 
 def complete_blocks(blocks, fastq_pair):
     """ Organise reads into blocks."""
-    base = os.path.basename(fastq_pair[0])
-    sample = base.split('_')
+    sample = os.path.basename(fastq_pair[0]).split('_')
     if len(sample) > 0:
         sample = '_'.join(sample[:3])
         logging.info("Processing sample {}.".format(sample))
@@ -514,7 +516,7 @@ quality score below " + str(args.qualthresh) + "\">" + '\n')
     vcf_file.write("##FILTER=<ID=at,Description=\"Variant does not appear \
 in at least " + str(args.absthresh) + " read pairs\">" + '\n')
     vcf_file.write("##FILTER=<ID=pt,Description=\"Variant does not appear \
-in at least " + str(args.proportionthresh*100) \
+in at least " + str(args.proportionthresh * 100) \
 + "% of read pairs for the given region\">" + '\n')
 
 def main():
