@@ -86,10 +86,10 @@ def get_primer_sequences(primer_sequences_file):
     with open(primer_sequences_file) as primer_sequences:
         return list(csv.reader(primer_sequences, delimiter='\t'))
 
+COMPLEMENT = string.maketrans('ATCGN', 'TAGCN')
 def reverse_complement(sequence):
     """ Return the reverse complement of a DNA string."""
-    complement = string.maketrans('ATCGN', 'TAGCN')
-    return sequence.translate(complement)[::-1]
+    return sequence.translate(COMPLEMENT)[::-1]
 
 def nts(none_string):
     """ Returns an empty string for None."""
@@ -258,72 +258,72 @@ def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
         i = 0 if direction == 1 else -1
         new = slice(1, None) if direction == 1 else slice(None, -1)
         if aligned_insert[i] == aligned_read[i]:
+            # Match
             context = aligned_insert[i]
             aligned_insert = aligned_insert[new]
             aligned_read = aligned_read[new]
             qual = qual[new]
             pos += direction
-        else:
-            if not (aligned_insert[i] == '-' or aligned_read[i] == '-'):
-                # Single Nucleotide Variation
-                result.append(SNV(chrsm, pos, [aligned_insert[i], \
-                    aligned_read[i]], '.'))
-                if not ((args.qualthresh is None) or (ascii_to_phred(qual[i]) \
-                    >= args.qualthresh)):
-                    result[-1].filter_reason = ''.join([nts(result[-1].\
-                        filter_reason), ";qlt"])
-                context = aligned_insert[i]
-                aligned_insert = aligned_insert[new]
-                aligned_read = aligned_read[new]
-                qual = qual[new]
-                pos += direction
-            elif aligned_insert[i] == '-':
-                # Insertion
-                indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
-                    aligned_insert[::direction]))
-                new = slice(indel_length, None) if direction == 1 else \
-                slice(None, -1 * indel_length)
-                if indel_length >= len(aligned_insert):
-                    return result
-                if direction == 1:
-                    result.append(Insertion(chrsm, pos, \
-                    [aligned_read[:indel_length], context], '.'))
-                else:
-                    result.append(Insertion(chrsm, pos + 1, [aligned_read[-1 \
-                        * indel_length:], aligned_insert[-1 * \
-                        indel_length - 1]], '.'))
-                # insertion with QUAL data?
-                if not ((args.qualthresh is None) or all([ascii_to_phred(b) >= \
-                args.qualthresh for b in qual[new]])):
-                    result[-1].filter_reason = ''.join([nts(result[-1].\
+        elif not (aligned_insert[i] == '-' or aligned_read[i] == '-'):
+            # Single Nucleotide Variation
+            result.append(SNV(chrsm, pos, [aligned_insert[i], \
+                aligned_read[i]], '.'))
+            if not ((args.qualthresh is None) or (ascii_to_phred(qual[i]) \
+                >= args.qualthresh)):
+                result[-1].filter_reason = ''.join([nts(result[-1].\
                     filter_reason), ";qlt"])
-                aligned_read = aligned_read[new]
-                aligned_insert = aligned_insert[new]
-                qual = qual[new]
-            elif aligned_read[i] == '-':
-                # Deletion
-                indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
-                    aligned_read[::direction]))
-                new = slice(indel_length, None) if direction == 1 else \
-                slice(None, -1 * indel_length)
-                if indel_length >= len(aligned_insert):
-                    return result
-                if direction == 1:
-                    result.append(Deletion(chrsm, pos, \
-                    [aligned_insert[:indel_length], context], '.'))
-                else:
-                    result.append(Deletion(chrsm, pos - indel_length + 1, \
-                        [aligned_insert[-1 * indel_length:], aligned_insert\
-                        [-1 * indel_length - 1]], '.'))
-                # deletion with QUAL data?
-                if not ((args.qualthresh is None) or (ascii_to_phred(qual[i]) \
-                    >= args.qualthresh)):
-                    result[-1].filter_reason = ''.join([nts(result[-1].\
-                    filter_reason), ";qlt"])
-                context = aligned_insert[indel_length - 1]
-                aligned_insert = aligned_insert[new]
-                aligned_read = aligned_read[new]
-                pos += indel_length * direction
+            context = aligned_insert[i]
+            aligned_insert = aligned_insert[new]
+            aligned_read = aligned_read[new]
+            qual = qual[new]
+            pos += direction
+        elif aligned_insert[i] == '-':
+            # Insertion
+            indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
+                aligned_insert[::direction]))
+            new = slice(indel_length, None) if direction == 1 else \
+            slice(None, -1 * indel_length)
+            if indel_length >= len(aligned_insert):
+                return result
+            if direction == 1:
+                result.append(Insertion(chrsm, pos, \
+                [aligned_read[:indel_length], context], '.'))
+            else:
+                result.append(Insertion(chrsm, pos + 1, [aligned_read[-1 \
+                    * indel_length:], aligned_insert[-1 * \
+                    indel_length - 1]], '.'))
+            # insertion with QUAL data?
+            if not ((args.qualthresh is None) or all([ascii_to_phred(b) >= \
+            args.qualthresh for b in qual[new]])):
+                result[-1].filter_reason = ''.join([nts(result[-1].\
+                filter_reason), ";qlt"])
+            aligned_read = aligned_read[new]
+            aligned_insert = aligned_insert[new]
+            qual = qual[new]
+        elif aligned_read[i] == '-':
+            # Deletion
+            indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
+                aligned_read[::direction]))
+            new = slice(indel_length, None) if direction == 1 else \
+            slice(None, -1 * indel_length)
+            if indel_length >= len(aligned_insert):
+                return result
+            if direction == 1:
+                result.append(Deletion(chrsm, pos, \
+                [aligned_insert[:indel_length], context], '.'))
+            else:
+                result.append(Deletion(chrsm, pos - indel_length + 1, \
+                    [aligned_insert[-1 * indel_length:], aligned_insert\
+                    [-1 * indel_length - 1]], '.'))
+            # deletion with QUAL data?
+            if not ((args.qualthresh is None) or (ascii_to_phred(qual[i]) \
+                >= args.qualthresh)):
+                result[-1].filter_reason = ''.join([nts(result[-1].\
+                filter_reason), ";qlt"])
+            context = aligned_insert[indel_length - 1]
+            aligned_insert = aligned_insert[new]
+            aligned_read = aligned_read[new]
+            pos += indel_length * direction
     return result
 
 def initialise_blocks(args):
@@ -366,36 +366,34 @@ def complete_blocks(blocks, fastq_pair):
         exit('Cannot deduce sample name from fastq filename {}'.\
             format(fastq_pair[0]))
     for fastq_file in fastq_pair:
-        with open(fastq_file, "rU") as fastq:
-            for (title, sequence, qual) in FastqGeneralIterator(fastq):
-                # Each read is also stored as a dictionary.
-                read = {'name': title.partition(' ')[0], 'seq': sequence, \
-                'qual': qual}
-                # Try to match each read (check the first 20 bases) with an
-                # expected primer.
-                read_bases = read['seq']
-                primer_key = read_bases[:20]
-                if len(blocks.get(primer_key, [])) == 9:
-                    # Possible forward primer matched.
-                    fseq = blocks[primer_key][7]
-                    if fseq == read_bases[:len(fseq)]:
-                        if read['name'] not in blocks[primer_key][3]:
-                            blocks[primer_key][3][read['name']] = [read, 0, \
-                            len(fseq), 0, sample]
-                        else:
-                            blocks[primer_key][3][read['name']][0] = read
-                            blocks[primer_key][3][read['name']][2] = len(fseq)
-                elif len(blocks.get(primer_key, [])) == 2:
-                    # Possible reverse primer matched.
-                    rseq = blocks[primer_key][0]
-                    if rseq == read_bases[:len(rseq)]:
-                        forward_key = blocks[primer_key][1]
-                        if read['name'] not in blocks[forward_key][3]:
-                            blocks[forward_key][3][read['name']] = [0, read, \
-                            0, len(rseq), sample]
-                        else:
-                            blocks[forward_key][3][read['name']][1] = read
-                            blocks[forward_key][3][read['name']][3] = len(rseq)
+        for (title, seq, qual) in FastqGeneralIterator(open(fastq_file, "rU")):
+            # Each read is also stored as a dictionary.
+            read = {'name': title.partition(' ')[0], 'seq': seq, 'qual': qual}
+            # Try to match each read (check the first 20 bases) with an
+            # expected primer.
+            read_bases = read['seq']
+            primer_key = read_bases[:20]
+            if len(blocks.get(primer_key, [])) == 9:
+                # Possible forward primer matched.
+                fseq = blocks[primer_key][7]
+                if fseq == read_bases[:len(fseq)]:
+                    if read['name'] not in blocks[primer_key][3]:
+                        blocks[primer_key][3][read['name']] = [read, 0, \
+                        len(fseq), 0, sample]
+                    else:
+                        blocks[primer_key][3][read['name']][0] = read
+                        blocks[primer_key][3][read['name']][2] = len(fseq)
+            elif len(blocks.get(primer_key, [])) == 2:
+                # Possible reverse primer matched.
+                rseq = blocks[primer_key][0]
+                if rseq == read_bases[:len(rseq)]:
+                    forward_key = blocks[primer_key][1]
+                    if read['name'] not in blocks[forward_key][3]:
+                        blocks[forward_key][3][read['name']] = [0, read, \
+                        0, len(rseq), sample]
+                    else:
+                        blocks[forward_key][3][read['name']][1] = read
+                        blocks[forward_key][3][read['name']][3] = len(rseq)
     # For the next stage, we only need the actual blocks.
     return [b[:6] for b in blocks.values() if len(b) > 2]
 
@@ -422,16 +420,16 @@ def process_blocks(args, blocks, id_info, vcf_file):
             # For both reads, we initially assume that they only have single
             # nucleotide variants. If we detect results which may suggest
             # otherwise, we go to a gapped alignment.
-            variants1 = read_snvs(args, chrsm, read1['qual'], start, \
-                insert, forward_bases, 1)
-            variants2 = read_snvs(args, chrsm, read2['qual'], end, \
-                insert, reverse_complement(reverse_bases), -1)
+            variants1 = read_snvs(args, chrsm, read1['qual'], start, insert, \
+                forward_bases, 1)
+            variants2 = read_snvs(args, chrsm, read2['qual'], end, insert, \
+                reverse_complement(reverse_bases), -1)
 
             # Gapped alignment for the reads in which we have detected the
             # possibility of indels.
             if variants1 == 0:
-                variants1 = read_variants(args, chrsm, read1['qual'], \
-                    start, insert, forward_bases, 1)
+                variants1 = read_variants(args, chrsm, read1['qual'], start, \
+                    insert, forward_bases, 1)
             if variants2 == 0:
                 variants2 = read_variants(args, chrsm, read2['qual'], end, \
                     insert, reverse_complement(reverse_bases), -1)
@@ -456,10 +454,9 @@ amount of variants.".format(read1['name']))
         for var in block_vars:
             num_vars = block_vars[var]
             proportion = float(num_vars) / num_pairs
-            var.info.extend([''.join(["Sample=", sample]), \
-                ''.join(["NV=", str(num_vars)]), ''.join(["NP=", \
-                    str(num_pairs)]), ''.join(["PCT=", str('{:.2%}'\
-                        .format(proportion))])])
+            var.info.extend([''.join(["Sample=", sample]), ''.join(["NV=", \
+                str(num_vars)]), ''.join(["NP=", str(num_pairs)]), \
+            ''.join(["PCT=", str('{:.2%}'.format(proportion))])])
             if num_vars < args.absthresh:
                 var.filter_reason = ''.join([nts(var.filter_reason), ";at"])
             if proportion < args.proportionthresh:
@@ -501,8 +498,8 @@ def write_coverage_data(coverage_file, coverage_info):
     coverage_file.write('chr\tblock_start\tblock_end\tnum_pairs\n')
     for chrsm, start, end, num_pairs in sorted(coverage_info, \
     key=itemgetter(3)):
-        coverage_file.write('{}\t{}\t{}\t{}\n'.format(chrsm, start, \
-            end, num_pairs))
+        coverage_file.write('{}\t{}\t{}\t{}\n'.format(chrsm, start, end, \
+            num_pairs))
 
 def write_metadata(args, vcf_file):
     """ Write the opening lines of metadata to the vcf file."""
@@ -520,12 +517,12 @@ read pairs at POS\">\n")
     vcf_file.write("##INFO=<ID=PCT,Number=1,Type=Float,Description=\
 \"Percentage of read pairs at POS with variant\">\n")
     if args.qualthresh:
-        vcf_file.write("##FILTER=<ID=qlt,Description=\"Variant has \
-phred quality score below {} \">\n".format(args.qualthresh))
-    vcf_file.write("##FILTER=<ID=at,Description=\"Variant does not \
-appear in at least {} read pairs\">\n".format(args.absthresh))
-    vcf_file.write("##FILTER=<ID=pt,Description=\"Variant does not \
-appear in at least {}% of read pairs for the given region\">\n"\
+        vcf_file.write("##FILTER=<ID=qlt,Description=\"Variant has phred \
+quality score below {} \">\n".format(args.qualthresh))
+    vcf_file.write("##FILTER=<ID=at,Description=\"Variant does not appear in \
+at least {} read pairs\">\n".format(args.absthresh))
+    vcf_file.write("##FILTER=<ID=pt,Description=\"Variant does not appear in \
+at least {}% of read pairs for the given region\">\n"\
 .format(args.proportionthresh))
 
 def main():
