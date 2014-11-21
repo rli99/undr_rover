@@ -12,6 +12,7 @@ import csv
 import datetime
 import logging
 import os
+import string
 import sys
 import vcf
 
@@ -87,8 +88,8 @@ def get_primer_sequences(primer_sequences_file):
 
 def reverse_complement(sequence):
     """ Return the reverse complement of a DNA string."""
-    rc_bases = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G', 'N': 'N'}
-    return ''.join([rc_bases[base] for base in sequence[::-1]])
+    complement = string.maketrans('ATCGN', 'TAGCN')
+    return sequence.translate(complement)[::-1]
 
 def nts(none_string):
     """ Returns an empty string for None."""
@@ -360,7 +361,7 @@ def complete_blocks(blocks, fastq_pair):
     sample = os.path.basename(fastq_pair[0]).split('_')
     if len(sample) > 0:
         sample = '_'.join(sample[:3])
-        logging.info("Processing sample {}.".format(sample))
+        logging.info("Processing sample {}".format(sample))
     else:
         exit('Cannot deduce sample name from fastq filename {}'.\
             format(fastq_pair[0]))
@@ -368,11 +369,11 @@ def complete_blocks(blocks, fastq_pair):
         with open(fastq_file, "rU") as fastq:
             for (title, sequence, qual) in FastqGeneralIterator(fastq):
                 # Each read is also stored as a dictionary.
-                read = {'name': title.split(' ')[0], 'seq': sequence, \
+                read = {'name': title.partition(' ')[0], 'seq': sequence, \
                 'qual': qual}
                 # Try to match each read (check the first 20 bases) with an
                 # expected primer.
-                read_bases = str(read['seq'])
+                read_bases = read['seq']
                 primer_key = read_bases[:20]
                 if len(blocks.get(primer_key, [])) == 9:
                     # Possible forward primer matched.
@@ -416,27 +417,24 @@ def process_blocks(args, blocks, id_info, vcf_file):
 
             forward_bases = read1['seq'][fprimerlen - args.primer_bases:]
             reverse_bases = read2['seq'][rprimerlen - args.primer_bases:]
-
             insert = insert_seq.upper()
-            forward_seq = str(forward_bases)
-            reverse_seq = reverse_complement(str(reverse_bases))
 
             # For both reads, we initially assume that they only have single
             # nucleotide variants. If we detect results which may suggest
             # otherwise, we go to a gapped alignment.
             variants1 = read_snvs(args, chrsm, read1['qual'], start, \
-                insert, forward_seq, 1)
+                insert, forward_bases, 1)
             variants2 = read_snvs(args, chrsm, read2['qual'], end, \
-                insert, reverse_seq, -1)
+                insert, reverse_complement(reverse_bases), -1)
 
             # Gapped alignment for the reads in which we have detected the
             # possibility of indels.
             if variants1 == 0:
                 variants1 = read_variants(args, chrsm, read1['qual'], \
-                    start, insert, forward_seq, 1)
+                    start, insert, forward_bases, 1)
             if variants2 == 0:
                 variants2 = read_variants(args, chrsm, read2['qual'], end, \
-                    insert, reverse_seq, -1)
+                    insert, reverse_complement(reverse_bases), -1)
 
             # Ignore reads which have an unusually high amount of variants.
             if len(variants1) > args.max_variants or len(variants2) > \
@@ -458,7 +456,7 @@ amount of variants.".format(read1['name']))
         for var in block_vars:
             num_vars = block_vars[var]
             proportion = float(num_vars) / num_pairs
-            var.info.extend([''.join(["Sample=", str(sample)]), \
+            var.info.extend([''.join(["Sample=", sample]), \
                 ''.join(["NV=", str(num_vars)]), ''.join(["NP=", \
                     str(num_pairs)]), ''.join(["PCT=", str('{:.2%}'\
                         .format(proportion))])])
