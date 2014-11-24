@@ -503,12 +503,12 @@ read pairs at POS\">\n")
 \"Percentage of read pairs at POS with variant\">\n")
     if args.qualthresh:
         vcf_file.write("##FILTER=<ID=qlt,Description=\"Variant has phred \
-quality score below {} \">\n".format(args.qualthresh))
+quality score below {}\">\n".format(args.qualthresh))
     vcf_file.write("##FILTER=<ID=at,Description=\"Variant does not appear in \
 at least {} read pairs\">\n".format(args.absthresh))
     vcf_file.write("##FILTER=<ID=pt,Description=\"Variant does not appear in \
 at least {}% of read pairs for the given region\">\n"\
-.format(args.proportionthresh))
+.format(args.proportionthresh * 100))
 
 def main():
     """ Main function."""
@@ -522,8 +522,7 @@ def main():
             datefmt='%a, %d %b %Y %H:%M:%S')
     logging.info('Program started.')
     logging.info('Command line: {}'.format(' '.join(sys.argv)))
-    open(args.out, 'w').close()
-    with open(args.out, 'a') as vcf_file:
+    with open(args.out, 'w') as vcf_file:
         vcf_reader = vcf.Reader(filename=args.id_info) if args.id_info else None
         write_metadata(args, vcf_file)
         vcf_file.write(OUTPUT_HEADER + '\n')
