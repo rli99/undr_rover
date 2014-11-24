@@ -74,33 +74,6 @@ def parse_args():
         help='Fastq files containing reads.')
     return parser.parse_args()
 
-def get_block_coords(primer_coords_file):
-    """ Retrieves the coordinates of the start and end of each block, and
-    return as a list."""
-    with open(primer_coords_file) as primer_coords:
-        return list(csv.reader(primer_coords, delimiter='\t'))
-
-def get_primer_sequences(primer_sequences_file):
-    """ Retrieves the sequences of bases for each primer, and return as a
-    list."""
-    with open(primer_sequences_file) as primer_sequences:
-        return list(csv.reader(primer_sequences, delimiter='\t'))
-
-COMPLEMENT = string.maketrans('ATCGN', 'TAGCN')
-def reverse_complement(sequence):
-    """ Return the reverse complement of a DNA string."""
-    return sequence.translate(COMPLEMENT)[::-1]
-
-def nts(none_string):
-    """ Returns an empty string for None."""
-    return none_string or ''
-
-def ascii_to_phred(ascii):
-    """ Quality score of a base is stored as a byte (ascii character) in
-    "Qual plus 33 format". So we subtract off 33 from the ascii code to get
-    the actual score."""
-    return ord(ascii) - 33
-
 class Base(object):
     """ A DNA base paired with its quality score."""
     def __init__(self, base, qual):
@@ -203,6 +176,21 @@ class Deletion(Variant):
         """ ALT base."""
         return self.context
 
+def ascii_to_phred(ascii):
+    """ Quality score of a base is stored as a byte (ascii character) in
+    "Qual plus 33 format". So we subtract off 33 from the ascii code to get
+    the actual score."""
+    return ord(ascii) - 33
+
+def nts(none_string):
+    """ Returns an empty string for None."""
+    return none_string or ''
+
+COMPLEMENT = string.maketrans('ATCGN', 'TAGCN')
+def reverse_complement(sequence):
+    """ Return the reverse complement of a DNA string."""
+    return sequence.translate(COMPLEMENT)[::-1]
+
 def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     """ Find all the SNV's in a read. 0 if we find two SNV's within a certain
     distance from each other."""
@@ -234,8 +222,7 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
             if check <= min_distance:
                 return 0
             result.append(SNV(chrsm, pos, [insert_seq[i], bases[i]], '.'))
-            if not ((args.qualthresh is None) or (ascii_to_phred(qual[i]) >= \
-            args.qualthresh)):
+            if args.qualthresh and ascii_to_phred(qual[i]) < args.qualthresh:
                 result[-1].filter_reason = ''.join([nts(result[-1].\
                     filter_reason), ";qlt"])
             insert_seq = insert_seq[new]
@@ -268,8 +255,7 @@ def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
             # Single Nucleotide Variation
             result.append(SNV(chrsm, pos, [aligned_insert[i], \
                 aligned_read[i]], '.'))
-            if not ((args.qualthresh is None) or (ascii_to_phred(qual[i]) \
-                >= args.qualthresh)):
+            if args.qualthresh and ascii_to_phred(qual[i]) < args.qualthresh:
                 result[-1].filter_reason = ''.join([nts(result[-1].\
                     filter_reason), ";qlt"])
             context = aligned_insert[i]
@@ -293,8 +279,8 @@ def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
                     * indel_length:], aligned_insert[-1 * \
                     indel_length - 1]], '.'))
             # insertion with QUAL data?
-            if not ((args.qualthresh is None) or all([ascii_to_phred(b) >= \
-            args.qualthresh for b in qual[new]])):
+            if args.qualthresh and any([ascii_to_phred(b) < args.qualthresh \
+                for b in qual[new]]):
                 result[-1].filter_reason = ''.join([nts(result[-1].\
                 filter_reason), ";qlt"])
             aligned_read = aligned_read[new]
@@ -316,8 +302,7 @@ def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
                     [aligned_insert[-1 * indel_length:], aligned_insert\
                     [-1 * indel_length - 1]], '.'))
             # deletion with QUAL data?
-            if not ((args.qualthresh is None) or (ascii_to_phred(qual[i]) \
-                >= args.qualthresh)):
+            if args.qualthresh and ascii_to_phred(qual[i]) < args.qualthresh:
                 result[-1].filter_reason = ''.join([nts(result[-1].\
                 filter_reason), ";qlt"])
             context = aligned_insert[indel_length - 1]
@@ -332,8 +317,8 @@ def initialise_blocks(args):
     themselves are a dictionary at this stage."""
     blocks = {}
     primer_sequences = {}
-    block_coords = get_block_coords(args.primer_coords)
-    primer_info = get_primer_sequences(args.primer_sequences)
+    block_coords = list(csv.reader(open(args.primer_coords), delimiter='\t'))
+    primer_info = list(csv.reader(open(args.primer_sequences), delimiter='\t'))
     reference = Fasta(args.reference)
     for primer in primer_info:
         # Initiates a dictionary containing containing primer sequences.
@@ -539,10 +524,7 @@ def main():
     logging.info('Command line: {}'.format(' '.join(sys.argv)))
     open(args.out, 'w').close()
     with open(args.out, 'a') as vcf_file:
-        if args.id_info:
-            vcf_reader = vcf.Reader(filename=args.id_info)
-        else:
-            vcf_reader = None
+        vcf_reader = vcf.Reader(filename=args.id_info) if args.id_info else None
         write_metadata(args, vcf_file)
         vcf_file.write(OUTPUT_HEADER + '\n')
         for fastq_pair in zip(*[iter(args.fastqs)]*2):
