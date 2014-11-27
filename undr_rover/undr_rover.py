@@ -17,8 +17,11 @@ import sys
 import vcf
 
 DEFAULT_ABSOLUTE_THRESHOLD = 2
-DEFAULT_MAX_VARIANTS = 25
-DEFAULT_PRIMER_BASES = 3
+DEFAULT_KMER_LENGTH = 30
+DEFAULT_KMER_THRESHOLD = 2
+DEFAULT_MAX_VARIANTS = 20
+DEFAULT_MINIMUM_READ_OVERLAP_BLOCK = 0.9
+DEFAULT_PRIMER_BASES = 5
 DEFAULT_PROPORTION_THRESHOLD = 0.05
 DEFAULT_SNV_THRESHOLD = 1
 OUTPUT_HEADER = '\t'.join(["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", \
@@ -33,15 +36,24 @@ def parse_args():
     parser.add_argument('--primer_sequences', metavar='FILE', type=str, \
         required=True, help='Primer base sequences as determined by a primer \
         generating program.')
+    parser.add_argument('--kmer_length', type=int, \
+        default=DEFAULT_KMER_LENGTH, \
+        help='Length of k-mer to check after the primer sequence.' \
+        'Defaults to {}.'.format(DEFAULT_KMER_LENGTH))
+    parser.add_argument('--kmer_threshold', type=int, \
+        default=DEFAULT_KMER_THRESHOLD, \
+        help='Number of single nucleotide variants deemed acceptable in kmer.' \
+        'Defaults to {}.'.format(DEFAULT_KMER_THRESHOLD))
     parser.add_argument('--primer_bases', type=int, \
         default=DEFAULT_PRIMER_BASES, \
         help='Number of bases from primer region to use in gapped alignment.' \
-        'Helps with variant calling near the edges of a block.')
+        'Helps with variant calling near the edges of a block.' \
+        'Defaults to {}.'.format(DEFAULT_PRIMER_BASES))
     parser.add_argument('--proportionthresh', metavar='N', type=float, \
         default=DEFAULT_PROPORTION_THRESHOLD, \
-        help='Keep variants which appear in this proportion of the read pairs '
-             'for a given target region, and bin otherwise. '
-             'Defaults to {}.'.format(DEFAULT_PROPORTION_THRESHOLD))
+        help='Keep variants which appear in this proportion of the read \
+        pairs. For a given target region, and bin otherwise.' \
+        'Defaults to {}.'.format(DEFAULT_PROPORTION_THRESHOLD))
     parser.add_argument('--absthresh', metavar='N', type=int, \
         default=DEFAULT_ABSOLUTE_THRESHOLD, \
         help='Only keep variants which appear in at least this many \
@@ -49,6 +61,10 @@ def parse_args():
         'Defaults to {}.'.format(DEFAULT_ABSOLUTE_THRESHOLD))
     parser.add_argument('--qualthresh', metavar='N', type=int, \
         help='Minimum base quality score (phred).')
+    parser.add_argument('--overlap', type=float, \
+        default=DEFAULT_MINIMUM_READ_OVERLAP_BLOCK, \
+        help='Minimum proportion of block which must be overlapped by a read.' \
+        'Defaults to {}.'.format(DEFAULT_MINIMUM_READ_OVERLAP_BLOCK))
     parser.add_argument('--max_variants', metavar='N', type=int, \
         default=DEFAULT_MAX_VARIANTS, \
         help='Ignore reads with greater than this many variants observed.' \
@@ -56,7 +72,7 @@ def parse_args():
     parser.add_argument('--reference', metavar='FILE', type=str, \
         required=True, help='Reference sequences in Fasta format.')
     parser.add_argument('--id_info', metavar='FILE', type=str, \
-    help='File containing rs ID information in VCF format.')
+        help='File containing rs ID information in VCF format.')
     parser.add_argument('--out', metavar='FILE', type=str, \
         required=True, help='Name of output file containing called variants.')
     parser.add_argument('--log', metavar='FILE', type=str, \
@@ -196,41 +212,58 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     distance from each other."""
     # If --thorough is set, any reads in which 2 SNV's are detected will undergo
     # a complete gapped alignment instead.
+    adj, same_length = False, False
     min_distance = len(insert_seq) if args.thorough else args.snvthresh
     check = min_distance
     pos -= args.primer_bases * direction
     result = []
     # Initiate the relevant indices given the direction of the read.
     i = 0 if direction == 1 else -1
-    new = slice(1, None) if direction == 1 else slice(None, -1)
+    new = slice(0, 1) if direction == 1 else slice(-1, None)
     # Check for identical insert sequence and read (no variants).
     if direction == 1 and insert_seq[args.primer_bases:-1 * args.primer_bases] \
     == bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
-        return result
+        return (result, 0)
     if direction == -1 and insert_seq[args.primer_bases:-1 * args.primer_bases]\
      == bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
-        return result
+        return (result, 0)
+    if direction == 1 and insert_seq[args.primer_bases:-1 * args.primer_bases]\
+    [-5:] == bases[args.primer_bases:len(insert_seq) - args.primer_bases][-5:]:
+        same_length = True
+    if direction == -1 and insert_seq[args.primer_bases:-1 * args.primer_bases]\
+    [:5] == bases[-1 * len(insert_seq) + args.primer_bases:-1 * \
+    args.primer_bases][:5]:
+        same_length = True
+
+    kmer_stop = pos + args.kmer_length * direction
+    count = 0
+    insert_seq, bases = list(insert_seq), list(bases)
     while insert_seq and bases:
         if insert_seq[i] == bases[i]:
-            insert_seq = insert_seq[new]
-            bases = bases[new]
-            qual = qual[new]
+            del insert_seq[new], bases[new], qual[new]
             check += 1
             pos += direction
         else:
             # If we have seen an SNV within a certain distance prior, return 0.
+            if pos < kmer_stop and direction == 1 or pos > kmer_stop and \
+            direction == -1:
+                count += 1
             if check <= min_distance:
-                return 0
+                adj = True
             result.append(SNV(chrsm, pos, [insert_seq[i], bases[i]], '.'))
             if args.qualthresh and ascii_to_phred(qual[i]) < args.qualthresh:
                 result[-1].filter_reason = ''.join([nts(result[-1].\
                     filter_reason), ";qlt"])
-            insert_seq = insert_seq[new]
-            bases = bases[new]
-            qual = qual[new]
+            del insert_seq[new], bases[new], qual[new]
             pos += direction
             check = 1
-    return result
+    # If we found adjacent snv's and the end of the read doesn't match up with
+    # the expected sequence, return 0. We will do a gapped alignment in this
+    # exact situation only. In other words, we will be disregarding cases where
+    # there are insertion(s) and deletion(s) of the same length in a read.
+    if adj is True and same_length is False:
+        return (0, count)
+    return (result, count)
 
 def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
     """ Find all the variants in a read (SNVs, Insertions, Deletions)."""
@@ -240,16 +273,15 @@ def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
     aligned_insert, aligned_read = pairwise2.align.globalms(insert_seq, bases, \
         2, 0, -2, -1, penalize_end_gaps=(0, 0), one_alignment_only=1)[0][:2]
     context = '-'
+    aligned_insert, aligned_read = list(aligned_insert), list(aligned_read)
     while aligned_insert and aligned_read:
         # Initialise the relevant indices given the direction of the read.
         i = 0 if direction == 1 else -1
-        new = slice(1, None) if direction == 1 else slice(None, -1)
+        new = slice(0, 1) if direction == 1 else slice(-1, None)
         if aligned_insert[i] == aligned_read[i]:
             # Match
             context = aligned_insert[i]
-            aligned_insert = aligned_insert[new]
-            aligned_read = aligned_read[new]
-            qual = qual[new]
+            del aligned_insert[new], aligned_read[new], qual[new]
             pos += direction
         elif not (aligned_insert[i] == '-' or aligned_read[i] == '-'):
             # Single Nucleotide Variation
@@ -259,55 +291,50 @@ def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
                 result[-1].filter_reason = ''.join([nts(result[-1].\
                     filter_reason), ";qlt"])
             context = aligned_insert[i]
-            aligned_insert = aligned_insert[new]
-            aligned_read = aligned_read[new]
-            qual = qual[new]
+            del aligned_insert[new], aligned_read[new], qual[new]
             pos += direction
         elif aligned_insert[i] == '-':
             # Insertion
             indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
                 aligned_insert[::direction]))
-            new = slice(indel_length, None) if direction == 1 else \
-            slice(None, -1 * indel_length)
+            new = slice(0, indel_length) if direction == 1 else \
+            slice(-1 * indel_length, None)
             if indel_length >= len(aligned_insert):
                 return result
             if direction == 1:
                 result.append(Insertion(chrsm, pos, \
-                [aligned_read[:indel_length], context], '.'))
+                [''.join(aligned_read[:indel_length]), context], '.'))
             else:
-                result.append(Insertion(chrsm, pos + 1, [aligned_read[-1 \
-                    * indel_length:], aligned_insert[-1 * \
-                    indel_length - 1]], '.'))
+                result.append(Insertion(chrsm, pos + 1, [''.join\
+                    (aligned_read[-1 * indel_length:]), \
+                    ''.join(aligned_insert[-1 * indel_length - 1])], '.'))
             # insertion with QUAL data?
             if args.qualthresh and any([ascii_to_phred(b) < args.qualthresh \
                 for b in qual[new]]):
                 result[-1].filter_reason = ''.join([nts(result[-1].\
                 filter_reason), ";qlt"])
-            aligned_read = aligned_read[new]
-            aligned_insert = aligned_insert[new]
-            qual = qual[new]
+            del aligned_insert[new], aligned_read[new], qual[new]
         elif aligned_read[i] == '-':
             # Deletion
             indel_length = sum(1 for _ in takewhile(lambda x: x == '-', \
                 aligned_read[::direction]))
-            new = slice(indel_length, None) if direction == 1 else \
-            slice(None, -1 * indel_length)
+            new = slice(0, indel_length) if direction == 1 else \
+            slice(-1 * indel_length, None)
             if indel_length >= len(aligned_insert):
                 return result
             if direction == 1:
                 result.append(Deletion(chrsm, pos, \
-                [aligned_insert[:indel_length], context], '.'))
+                [''.join(aligned_insert[:indel_length]), context], '.'))
             else:
                 result.append(Deletion(chrsm, pos - indel_length + 1, \
-                    [aligned_insert[-1 * indel_length:], aligned_insert\
-                    [-1 * indel_length - 1]], '.'))
+                    [''.join(aligned_insert[-1 * indel_length:]), \
+                    ''.join(aligned_insert[-1 * indel_length - 1])], '.'))
             # deletion with QUAL data?
             if args.qualthresh and ascii_to_phred(qual[i]) < args.qualthresh:
                 result[-1].filter_reason = ''.join([nts(result[-1].\
                 filter_reason), ";qlt"])
             context = aligned_insert[indel_length - 1]
-            aligned_insert = aligned_insert[new]
-            aligned_read = aligned_read[new]
+            del aligned_insert[new], aligned_read[new]
             pos += indel_length * direction
     return result
 
@@ -341,7 +368,7 @@ def initialise_blocks(args):
         primer_sequences[block[3]][:20]]
     return blocks
 
-def complete_blocks(blocks, fastq_pair):
+def complete_blocks(args, blocks, fastq_pair):
     """ Organise reads into blocks."""
     sample = os.path.basename(fastq_pair[0]).split('_')
     if len(sample) > 0:
@@ -353,7 +380,8 @@ def complete_blocks(blocks, fastq_pair):
     for fastq_file in fastq_pair:
         for (title, seq, qual) in FastqGeneralIterator(open(fastq_file, "rU")):
             # Each read is also stored as a dictionary.
-            read = {'name': title.partition(' ')[0], 'seq': seq, 'qual': qual}
+            read = {'name': title.partition(' ')[0], 'seq': seq}
+            read['qual'] = qual if args.qualthresh else []
             # Try to match each read (check the first 20 bases) with an
             # expected primer.
             read_bases = read['seq']
@@ -380,15 +408,15 @@ def complete_blocks(blocks, fastq_pair):
                         blocks[forward_key][3][read['name']][1] = read
                         blocks[forward_key][3][read['name']][3] = len(rseq)
     # For the next stage, we only need the actual blocks.
-    return [b[:6] for b in blocks.values() if len(b) > 2]
+    return [b[:5] for b in blocks.values() if len(b) > 2]
 
 def process_blocks(args, blocks, id_info, vcf_file):
     """ Variant calling stage. Process blocks one at a time and call variants
     for each block."""
     coverage_info = []
-    for block_info in sorted(blocks, key=itemgetter(5)):
+    for block_info in sorted(blocks, key=itemgetter(0, int(1))):
         block_vars = {}
-        num_pairs = 0
+        num_pairs, total_pairs, kmer_fail = 0, 0, 0
         chrsm, start, end, reads, insert_seq = block_info[:5]
         start = int(start)
         end = int(end)
@@ -396,19 +424,30 @@ def process_blocks(args, blocks, id_info, vcf_file):
             .format(chrsm, start, end))
         for read_pair in [r for r in reads.values() if 0 not in r]:
             num_pairs += 1
+            total_pairs += 1
             read1, read2, fprimerlen, rprimerlen, sample = read_pair
+            variants1, variants2 = [], []
 
             forward_bases = read1['seq'][fprimerlen - args.primer_bases:]
             reverse_bases = read2['seq'][rprimerlen - args.primer_bases:]
             insert = insert_seq.upper()
-
-            # For both reads, we initially assume that they only have single
-            # nucleotide variants. If we detect results which may suggest
-            # otherwise, we go to a gapped alignment.
-            variants1 = read_snvs(args, chrsm, read1['qual'], start, insert, \
-                forward_bases, 1)
-            variants2 = read_snvs(args, chrsm, read2['qual'], end, insert, \
-                reverse_complement(reverse_bases), -1)
+            min_overlap = args.overlap * len(insert_seq)
+            if len(forward_bases) - args.primer_bases > min_overlap and \
+            len(reverse_bases) - args.primer_bases > min_overlap:
+                # For both reads, we initially assume that they only have single
+                # nucleotide variants. If we detect results which may suggest
+                # otherwise, we go to a gapped alignment.
+                variants1, kmer1 = read_snvs(args, chrsm, read1['qual'], \
+                    start, insert, forward_bases, 1)
+                variants2, kmer2 = read_snvs(args, chrsm, read2['qual'], end, \
+                    insert, reverse_complement(reverse_bases), -1)
+                # K-mer test. If either read fails, disregard the read pair.
+                if kmer1 > args.kmer_threshold and kmer2 > args.kmer_threshold:
+                    variants1, variants2 = [], []
+                    num_pairs -= 1
+                    kmer_fail += 1
+            else:
+                num_pairs -= 1
 
             # Gapped alignment for the reads in which we have detected the
             # possibility of indels.
@@ -422,9 +461,8 @@ def process_blocks(args, blocks, id_info, vcf_file):
             # Ignore reads which have an unusually high amount of variants.
             if len(variants1) > args.max_variants or len(variants2) > \
             args.max_variants:
+                num_pairs -= 1
                 variants1, variants2 = [], []
-                logging.info("Read {} discarded due to an unusually high \
-amount of variants.".format(read1['name']))
 
             # Consider variants each read in the pair share in common.
             for var in set(variants1).intersection(set(variants2)):
@@ -432,7 +470,12 @@ amount of variants.".format(read1['name']))
                 if var.pos >= start and var.pos <= end:
                     block_vars[var] = block_vars.get(var, 0) + 1
 
-        logging.info("Number of read pairs in block: {}".format(num_pairs))
+        logging.info("Number of read pairs in block: {}".format(total_pairs))
+        if kmer_fail > 0:
+            logging.info("Number of read pairs which failed k-mer test: {}"\
+                .format(kmer_fail))
+        logging.info("Number of acceptable read pairs in block: {}"\
+            .format(num_pairs))
         logging.info("Number of variants found in block: {}".\
             format(len(block_vars)))
 
@@ -459,24 +502,17 @@ amount of variants.".format(read1['name']))
 def write_variant(vcf_file, variant, id_info, args):
     """ Writes variant to vcf_file, while also finding the relevant rs number
     from dbsnp if applicable."""
-    info = 0
-    record_info = None
     # If the variant is deemed a "PASS", find the relevant rs number from dbsnp.
+    ref = '.'  # Default
     if variant.fil() == "PASS" and args.id_info:
         for record in id_info.fetch(variant.chrsm, variant.position(), variant.\
         position() + max(len(variant.ref()), len(variant.alt())) + 1):
             if record.POS == variant.position() and record.REF == \
             variant.ref() and (variant.alt() in record.ALT):
-                info = 1
-                record_info = record
-    if info == 1:
-        vcf_file.write('\t'.join([variant.chrsm, str(variant.position()), \
-str(record_info.ID), variant.ref(), variant.alt(), str(variant.qual), variant\
-.fil(), ';'.join(variant.info)]) + '\n')
-    else:
-        vcf_file.write('\t'.join([variant.chrsm, str(variant.position()), \
-'.', variant.ref(), variant.alt(), str(variant.qual), variant.fil(), ';'\
-.join(variant.info)]) + '\n')
+                ref = str(record.ID)
+    vcf_file.write('\t'.join([variant.chrsm, str(variant.position()), \
+ref, variant.ref(), variant.alt(), str(variant.qual), variant.fil(), \
+';'.join(variant.info)]) + '\n')
 
 def write_coverage_data(coverage_file, coverage_info):
     """ Write coverage information to the coverage files."""
@@ -513,13 +549,13 @@ at least {}% of read pairs for the given region\">\n"\
 def main():
     """ Main function."""
     args = parse_args()
-    if args.log is None:
-        logfile = sys.stdout
-    else:
+    if args.log:
         logfile = args.log
         logging.basicConfig(filename=logfile, level=logging.DEBUG, \
             filemode='w', format='%(asctime)s %(message)s', \
             datefmt='%a, %d %b %Y %H:%M:%S')
+    else:
+        logfile = sys.stdout
     logging.info('Program started.')
     logging.info('Command line: {}'.format(' '.join(sys.argv)))
     with open(args.out, 'w') as vcf_file:
@@ -528,8 +564,11 @@ def main():
         vcf_file.write(OUTPUT_HEADER + '\n')
         for fastq_pair in zip(*[iter(args.fastqs)]*2):
             blocks = initialise_blocks(args)
-            final_blocks = complete_blocks(blocks, fastq_pair)
+            final_blocks = complete_blocks(args, blocks, fastq_pair)
             process_blocks(args, final_blocks, vcf_reader, vcf_file)
+    # from guppy import hpy
+    # h = hpy()
+    # print h.heap()
 
 if __name__ == '__main__':
     main()
