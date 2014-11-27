@@ -220,20 +220,23 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     # Initiate the relevant indices given the direction of the read.
     i = 0 if direction == 1 else -1
     new = slice(0, 1) if direction == 1 else slice(-1, None)
-    # Check for identical insert sequence and read (no variants).
-    if direction == 1 and insert_seq[args.primer_bases:-1 * args.primer_bases] \
-    == bases[args.primer_bases:len(insert_seq) - args.primer_bases]:
-        return (result, 0)
-    if direction == -1 and insert_seq[args.primer_bases:-1 * args.primer_bases]\
-     == bases[-1 * len(insert_seq) + args.primer_bases:-1 * args.primer_bases]:
-        return (result, 0)
-    if direction == 1 and insert_seq[args.primer_bases:-1 * args.primer_bases]\
-    [-5:] == bases[args.primer_bases:len(insert_seq) - args.primer_bases][-5:]:
-        same_length = True
-    if direction == -1 and insert_seq[args.primer_bases:-1 * args.primer_bases]\
-    [:5] == bases[-1 * len(insert_seq) + args.primer_bases:-1 * \
-    args.primer_bases][:5]:
-        same_length = True
+    insert = insert_seq[args.primer_bases:-1 * args.primer_bases]
+    fread = bases[args.primer_bases:len(insert_seq) - args.primer_bases]
+    rread = bases[-1 * len(insert_seq) + args.primer_bases:-1 \
+    * args.primer_bases]
+
+    # Check for identical insert sequence and read (no variants) and the end of
+    # the read for matching bases.
+    if direction == 1:
+        if insert == fread:
+            return (result, 0)
+        elif insert[-5:] == fread[-5:]:
+            same_length = True
+    if direction == -1:
+        if insert == rread:
+            return (result, 0)
+        elif insert[:5] == rread[:5]:
+            same_length = True
 
     kmer_stop = pos + args.kmer_length * direction
     count = 0
