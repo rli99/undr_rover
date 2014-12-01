@@ -212,7 +212,7 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     distance from each other."""
     # If --thorough is set, any reads in which 2 SNV's are detected will undergo
     # a complete gapped alignment instead.
-    adj, same_length = False, False
+    adj = False
     min_distance = len(insert_seq) if args.thorough else args.snvthresh
     check = min_distance
     pos -= args.primer_bases * direction
@@ -230,13 +230,9 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     if direction == 1:
         if insert == fread:
             return (result, 0)
-        elif insert[-5:] == fread[-5:]:
-            same_length = True
     if direction == -1:
         if insert == rread:
             return (result, 0)
-        elif insert[:5] == rread[:5]:
-            same_length = True
 
     kmer_stop = pos + args.kmer_length * direction
     count = 0
@@ -260,11 +256,10 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
             del insert_seq[new], bases[new], qual[new]
             pos += direction
             check = 1
-    # If we found adjacent snv's and the end of the read doesn't match up with
-    # the expected sequence, return 0. We will do a gapped alignment in this
-    # exact situation only. In other words, we will be disregarding cases where
-    # there are insertion(s) and deletion(s) of the same length in a read.
-    if adj is True and same_length is False:
+    # If we found adjacent snv's, return 0 and the count of snv's in the k-mer
+    # region. This number will be used for the k-mer test and whether to discard
+    # the read.
+    if adj is True:
         return (0, count)
     return (result, count)
 
