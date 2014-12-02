@@ -6,8 +6,8 @@ Version: 0.1.0
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~ Incomplete. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Authors: Bernard J Pope (2,3), Tú Nguyen-Dumont (1), Fleur Hammet (1), 
-         Daniel J Park (1) and Roger Li
+Authors: Bernard J Pope (2,3), Tú Nguyen-Dumont (1), Daniel J Park (1) 
+         and Roger Li (2)
 
          (1) Genetic Epidemiology Laboratory, Department of Pathology,
              The University of Melbourne.
@@ -17,7 +17,7 @@ Authors: Bernard J Pope (2,3), Tú Nguyen-Dumont (1), Fleur Hammet (1),
          
 Web:     https://github.com/rli99/undr_rover
 
-License: 
+License: <License>
 
 Citation:
 
@@ -62,8 +62,9 @@ Command Line Usage
 --------------------------------------------------------------------------------
 
 usage: undr_rover [-h] --primer_coords PRIMERS --primer_sequences SEQ
-                  [--primer_bases N] [--proportionthresh N] [--absthresh N]
-                  [--qualthresh N] [--max_variants N] --reference FILE
+                  [--kmer_length N] [--kmer_threshold] [--primer_bases N] 
+                  [--proportionthresh N] [--absthresh N] [--qualthresh N] 
+                  [--overlap OVERLAP] [--max_variants N] --reference FILE
                   [--id_info FILE] [--thorough] [--snvthresh N]
                   --out FILE [--log FILE] [--coverdir COVERDIR]
                   fastqs [fastqs ...]
@@ -76,6 +77,9 @@ optional arguments:
     --primer_coords PRIMERS     Primer coordinates in TSV format.
     --primer_sequences SEQ      Primer base sequences as determined by a primer
                                 generating program.
+    --kmer_length N             Length of k-mer to use in k-mer test.
+    --kmer_threshold N          Number of SNVs in k-mer region deemed 
+                                acceptable.
     --primer_bases N            Number of bases from primer region to use in
                                 gapped alignment.
     --proportionthresh N        Keep variants which appear in this proportion of
@@ -84,16 +88,18 @@ optional arguments:
     --absthresh N               Only keep variants which appear in at least this
                                 many read-pairs. Defaults to 2.
     --qualthresh N              Minimum base quality score (phred).
+    --overlap OVERLAP           Minimum fraction overlap of read to block
+                                region. Defaults to 0.9
     --max_variants N            Maximum amount of variants per read before the
                                 read is discarded. Defaults to 25.
     --reference FILE            Reference sequences in FASTA format.
     --id_info FILE              File containing rs ID information in vcf format.
     --thorough                  If this parameter is set, gapped alignment will
-                                be used for all reads in which 2 or more SNV's
+                                be used for all reads in which 2 or more SNVs
                                 are found. Defaults to False.
     --snvthresh N               Only applicable if --thorough is not set. Gapped
                                 alignment will be used for reads which have 2 
-                                SNV's within N bases of each other. Defaults
+                                SNVs within N bases of each other. Defaults
                                 to 1. 
     --out FILE                  Output file containing called variants.
     --log FILE                  Logs progress in specified file, defaults to 
@@ -114,7 +120,7 @@ Explanation of the arguments
         A list of primers with their expected coordinates. TSV format with the
         following data:
 
-            chromosome  start   end
+            chromosome  start   end     forward_primer  reverse_primer
 
     --primer_sequences SEQ
 
@@ -124,6 +130,22 @@ Explanation of the arguments
         the following data:
 
             primer_name sequence
+
+    --kmer_length N
+
+        Optional. Defaults to 30.
+
+        Determines the length of k-mer to use in k-mer test. In this 
+        test, if a certain number of SNVs is found in k-mers from both reads
+        then the read pair is discarded.
+
+    --kmer_threshold N
+
+        Optional. Defaults to 2.
+
+        The number of SNVs considered acceptable in the k-mer region of a read.
+        If there are more than N SNVs in both k-mers of a read pair, then the 
+        read will be discarded. 
 
     --primer_bases N
 
@@ -177,6 +199,15 @@ Explanation of the arguments
         set then Rover will not consider quality scores in its decision
         to keep or discard a variant.
 
+    --overlap OVERLAP
+
+       Optional. Defaults to 0.9.
+
+       Minimum fraction overlap of read to block region.
+       0.5 means at least half of a block must be overlapped by a read
+       for the read to be considered for that region. 1.0 would mean the entire
+       block must be overlapped by the read.
+
     --max_variants N
 
         Optional. Defaults to 25. 
@@ -204,7 +235,7 @@ Explanation of the arguments
 
         Optional. Defaults to False.
 
-        If set, any reads which contain 2 or more SNV's will be
+        If set, any reads which contain 2 or more SNVs will be
         considered to possibly contain indels, and therefore gapped alignment
         will be performed for those reads. Causes a noticeable slowdown in the
         expected running time of Undr Rover.
@@ -214,7 +245,7 @@ Explanation of the arguments
         Optional. Defaults to 1.
 
         If --thorough is not set, gapped alignment will be performed on reads
-        which contain SNV's within N bases of each other. The default setting
+        which contain SNVs within N bases of each other. The default setting
         of 1 allows for the fastest run-time and should provide a sufficient 
         level of accuracy in the majority of cases.
      

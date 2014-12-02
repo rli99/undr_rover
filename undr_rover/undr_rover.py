@@ -221,18 +221,14 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     i = 0 if direction == 1 else -1
     new = slice(0, 1) if direction == 1 else slice(-1, None)
     insert = insert_seq[args.primer_bases:-1 * args.primer_bases]
-    fread = bases[args.primer_bases:len(insert_seq) - args.primer_bases]
-    rread = bases[-1 * len(insert_seq) + args.primer_bases:-1 \
-    * args.primer_bases]
 
-    # Check for identical insert sequence and read (no variants) and the end of
-    # the read for matching bases.
-    if direction == 1:
-        if insert == fread:
-            return (result, 0)
-    if direction == -1:
-        if insert == rread:
-            return (result, 0)
+    # Check for identical insert sequence and read (no variants).
+    if direction == 1 and insert == bases[args.primer_bases:len(insert_seq) - \
+    args.primer_bases]:
+        return (result, 0)
+    if direction == -1 and insert == bases[-1 * len(insert_seq) + \
+    args.primer_bases:-1 * args.primer_bases]:
+        return (result, 0)  
 
     kmer_stop = pos + args.kmer_length * direction
     count = 0
@@ -243,12 +239,18 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
             check += 1
             pos += direction
         else:
-            # If we have seen an SNV within a certain distance prior, return 0.
+            # Increment count if we see an SNV within the k-mer region.
             if pos < kmer_stop and direction == 1 or pos > kmer_stop and \
             direction == -1:
                 count += 1
             if check <= min_distance:
                 adj = True
+                # If SNV's within a certain distance have been detected, and
+                # we're past the k-mer region, return 0 as well as the count
+                # of SNV's in the k-mer region.
+                if pos >= kmer_stop and direction == 1 or pos <= kmer_stop and \
+                direction == -1:
+                    return (0, count)
             result.append(SNV(chrsm, pos, [insert_seq[i], bases[i]], '.'))
             if args.qualthresh and ascii_to_phred(qual[i]) < args.qualthresh:
                 result[-1].filter_reason = ''.join([nts(result[-1].\
@@ -256,11 +258,8 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
             del insert_seq[new], bases[new], qual[new]
             pos += direction
             check = 1
-    # If we found adjacent snv's, return 0 and the count of snv's in the k-mer
-    # region. This number will be used for the k-mer test and whether to discard
-    # the read.
-    if adj is True:
-        return (0, count)
+    # Return both the detected SNV's, and the count of SNV's within the k-mer
+    # region, which will be used to determine which reads pass the k-mer test.
     return (result, count)
 
 def read_variants(args, chrsm, qual, pos, insert_seq, bases, direction):
