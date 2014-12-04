@@ -18,7 +18,6 @@ import vcf
 
 DEFAULT_ABSOLUTE_THRESHOLD = 2
 DEFAULT_KMER_LENGTH = 30
-DEFAULT_KMER_THRESHOLD = 2
 DEFAULT_MAX_VARIANTS = 20
 DEFAULT_MINIMUM_READ_OVERLAP_BLOCK = 0.9
 DEFAULT_PRIMER_BASES = 5
@@ -41,9 +40,7 @@ def parse_args():
         help='Length of k-mer to check after the primer sequence.' \
         'Defaults to {}.'.format(DEFAULT_KMER_LENGTH))
     parser.add_argument('--kmer_threshold', type=int, \
-        default=DEFAULT_KMER_THRESHOLD, \
-        help='Number of single nucleotide variants deemed acceptable in kmer.' \
-        'Defaults to {}.'.format(DEFAULT_KMER_THRESHOLD))
+        help='Number of single nucleotide variants deemed acceptable in kmer.')
     parser.add_argument('--primer_bases', type=int, \
         default=DEFAULT_PRIMER_BASES, \
         help='Number of bases from primer region to use in gapped alignment.' \
@@ -208,9 +205,9 @@ def reverse_complement(sequence):
     return sequence.translate(COMPLEMENT)[::-1]
 
 def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
-    """ Find all the SNV's in a read. 0 if we find two SNV's within a certain
+    """ Find all the SNVs in a read. 0 if we find two SNVs within a certain
     distance from each other."""
-    # If --thorough is set, any reads in which 2 SNV's are detected will undergo
+    # If --thorough is set, any reads in which 2 SNVs are detected will undergo
     # a complete gapped alignment instead.
     adj = False
     min_distance = len(insert_seq) if args.thorough else args.snvthresh
@@ -245,9 +242,9 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
                 count += 1
             if check <= min_distance:
                 adj = True
-                # If SNV's within a certain distance have been detected, and
+                # If SNVs within a certain distance have been detected, and
                 # we're past the k-mer region, return 0 as well as the count
-                # of SNV's in the k-mer region.
+                # of SNVs in the k-mer region.
                 if pos >= kmer_stop and direction == 1 or pos <= kmer_stop and \
                 direction == -1:
                     return (0, count)
@@ -258,7 +255,7 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
             del insert_seq[new], bases[new], qual[new]
             pos += direction
             check = 1
-    # Return both the detected SNV's, and the count of SNV's within the k-mer
+    # Return both the detected SNVs, and the count of SNVs within the k-mer
     # region, which will be used to determine which reads pass the k-mer test.
     return (result, count)
 
@@ -367,6 +364,9 @@ def initialise_blocks(args):
 
 def complete_blocks(args, blocks, fastq_pair):
     """ Organise reads into blocks."""
+    for block in blocks:
+        if len(blocks[block]) > 2:
+            blocks[block][3] = {}
     sample = os.path.basename(fastq_pair[0]).split('_')
     if len(sample) > 0:
         sample = '_'.join(sample[:3])
@@ -439,10 +439,12 @@ def process_blocks(args, blocks, id_info, vcf_file):
                 variants2, kmer2 = read_snvs(args, chrsm, read2['qual'], end, \
                     insert, reverse_complement(reverse_bases), -1)
                 # K-mer test. If either read fails, disregard the read pair.
-                if kmer1 > args.kmer_threshold and kmer2 > args.kmer_threshold:
-                    variants1, variants2 = [], []
-                    num_pairs -= 1
-                    kmer_fail += 1
+                if args.kmer_threshold:
+                    if kmer1 > args.kmer_threshold and kmer2 > \
+                    args.kmer_threshold:
+                        variants1, variants2 = [], []
+                        num_pairs -= 1
+                        kmer_fail += 1
             else:
                 num_pairs -= 1
 
@@ -559,8 +561,8 @@ def main():
         vcf_reader = vcf.Reader(filename=args.id_info) if args.id_info else None
         write_metadata(args, vcf_file)
         vcf_file.write(OUTPUT_HEADER + '\n')
+        blocks = initialise_blocks(args)
         for fastq_pair in zip(*[iter(args.fastqs)]*2):
-            blocks = initialise_blocks(args)
             final_blocks = complete_blocks(args, blocks, fastq_pair)
             process_blocks(args, final_blocks, vcf_reader, vcf_file)
     # from guppy import hpy
