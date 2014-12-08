@@ -241,13 +241,15 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
             direction == -1:
                 count += 1
             if check <= min_distance:
-                adj = True
+                if not args.kmer_threshold:
+                    return (0, 0)
                 # If SNVs within a certain distance have been detected, and
                 # we're past the k-mer region, return 0 as well as the count
                 # of SNVs in the k-mer region.
                 if pos >= kmer_stop and direction == 1 or pos <= kmer_stop and \
                 direction == -1:
                     return (0, count)
+                adj = True
             result.append(SNV(chrsm, pos, [insert_seq[i], bases[i]], '.'))
             if args.qualthresh and ascii_to_phred(qual[i]) < args.qualthresh:
                 result[-1].filter_reason = ''.join([nts(result[-1].\
@@ -366,7 +368,7 @@ def complete_blocks(args, blocks, fastq_pair):
     """ Organise reads into blocks."""
     for block in blocks:
         if len(blocks[block]) > 2:
-            blocks[block][3] = {}
+            blocks[block][3].clear()
     sample = os.path.basename(fastq_pair[0]).split('_')
     if len(sample) > 0:
         sample = '_'.join(sample[:3])
@@ -375,35 +377,36 @@ def complete_blocks(args, blocks, fastq_pair):
         exit('Cannot deduce sample name from fastq filename {}'.\
             format(fastq_pair[0]))
     for fastq_file in fastq_pair:
-        for (title, seq, qual) in FastqGeneralIterator(open(fastq_file, "rU")):
-            # Each read is also stored as a dictionary.
-            read = {'name': title.partition(' ')[0], 'seq': seq}
-            read['qual'] = qual if args.qualthresh else []
-            # Try to match each read (check the first 20 bases) with an
-            # expected primer.
-            read_bases = read['seq']
-            primer_key = read_bases[:20]
-            if len(blocks.get(primer_key, [])) == 9:
-                # Possible forward primer matched.
-                fseq = blocks[primer_key][7]
-                if fseq == read_bases[:len(fseq)]:
-                    if read['name'] not in blocks[primer_key][3]:
-                        blocks[primer_key][3][read['name']] = [read, 0, \
-                        len(fseq), 0, sample]
-                    else:
-                        blocks[primer_key][3][read['name']][0] = read
-                        blocks[primer_key][3][read['name']][2] = len(fseq)
-            elif len(blocks.get(primer_key, [])) == 2:
-                # Possible reverse primer matched.
-                rseq = blocks[primer_key][0]
-                if rseq == read_bases[:len(rseq)]:
-                    forward_key = blocks[primer_key][1]
-                    if read['name'] not in blocks[forward_key][3]:
-                        blocks[forward_key][3][read['name']] = [0, read, \
-                        0, len(rseq), sample]
-                    else:
-                        blocks[forward_key][3][read['name']][1] = read
-                        blocks[forward_key][3][read['name']][3] = len(rseq)
+        with open(fastq_file, "rU") as fastq:
+            for (title, seq, qual) in FastqGeneralIterator(fastq):
+                # Each read is also stored as a dictionary.
+                read = {'name': title.partition(' ')[0], 'seq': seq}
+                read['qual'] = qual if args.qualthresh else []
+                # Try to match each read (check the first 20 bases) with an
+                # expected primer.
+                read_bases = read['seq']
+                primer_key = read_bases[:20]
+                if len(blocks.get(primer_key, [])) == 9:
+                    # Possible forward primer matched.
+                    fseq = blocks[primer_key][7]
+                    if fseq == read_bases[:len(fseq)]:
+                        if read['name'] not in blocks[primer_key][3]:
+                            blocks[primer_key][3][read['name']] = [read, 0, \
+                            len(fseq), 0, sample]
+                        else:
+                            blocks[primer_key][3][read['name']][0] = read
+                            blocks[primer_key][3][read['name']][2] = len(fseq)
+                elif len(blocks.get(primer_key, [])) == 2:
+                    # Possible reverse primer matched.
+                    rseq = blocks[primer_key][0]
+                    if rseq == read_bases[:len(rseq)]:
+                        forward_key = blocks[primer_key][1]
+                        if read['name'] not in blocks[forward_key][3]:
+                            blocks[forward_key][3][read['name']] = [0, read, \
+                            0, len(rseq), sample]
+                        else:
+                            blocks[forward_key][3][read['name']][1] = read
+                            blocks[forward_key][3][read['name']][3] = len(rseq)
     # For the next stage, we only need the actual blocks.
     return [b[:5] for b in blocks.values() if len(b) > 2]
 

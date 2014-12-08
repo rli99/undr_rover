@@ -25,8 +25,7 @@ Citation:
 
     <Citation>
 
-Requirements: Python 2.7, and the PySam, PyVCF, Pyfaidx and Biopython libraries
-(http://code.google.com/p/pysam/)
+Requirements: Python 2.7, and the PyVCF, Pyfaidx and Biopython libraries
 (https://pypi.python.org/pypi/biopython)
 (https://pypi.python.org/pypi/pyfaidx)
 (https://pypi.python.org/pypi/PyVCF)
