@@ -13,4 +13,9 @@ setup(
     description=(
         'UNDR ROVER: Unmapped primer directed read overlap variant caller.'),
     long_description=open('README.txt').read(),
+    install_requires=[
+        "PyVCF",
+        "biopython",
+        "pyfaidx"
+    ],
 )
