@@ -70,7 +70,9 @@ usage: undr_rover [-h] [--version] --primer_coords COORDS --primer_sequences SEQ
                   fastqs [fastqs ...]
 
 positional arguments:
-    fastqs                      FASTQ files grouped in pairs
+    fastqs                      FASTQ files grouped in pairs. FASTQ files are 
+                                preferable to FASTQ.gz files. Decompress with
+                                gunzip prior to using Undr Rover if necessary.
 
 optional arguments:
     -h, --help                  Show this help message and exit.
@@ -271,7 +273,9 @@ Explanation of the arguments
         One or more pairs of FASTQ files containing reads for which variant
         calling will be attempted. FASTQ.gz files are also accepted, though
         they will cause Undr Rover to take longer to execute as time is 
-        required to gunzip the files.
+        required to decompress the files. It is highly recommended to decompress
+        the FASTQ.gz files yourself prior to using undr rover as it will be 
+        much faster. 
 
 --------------------------------------------------------------------------------
 Example usage (should all be on one line)
