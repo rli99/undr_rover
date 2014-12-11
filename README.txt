@@ -35,8 +35,8 @@ The above requirements can be installed by running:
 General Description
 --------------------------------------------------------------------------------
 
-Undr Rover enables the user to call variants from FASTQ files directly without
-having to go through a mapping step. 
+Undr Rover enables the user to call variants from decompressed FASTQ files 
+directly without having to go through a mapping step. 
 
 Reads are organised into blocks, which are initialised from information about
 known primer sequences. For each block, we record the primer's DNA sequence, 
@@ -70,9 +70,9 @@ usage: undr_rover [-h] [--version] --primer_coords COORDS --primer_sequences SEQ
                   fastqs [fastqs ...]
 
 positional arguments:
-    fastqs                      FASTQ files grouped in pairs. FASTQ files are 
-                                preferable to FASTQ.gz files. Decompress with
-                                gunzip prior to using Undr Rover if necessary.
+    fastqs                      FASTQ files grouped in pairs. If you have 
+                                FASTQ.gz files, they will need to decompressed
+                                prior to using with Undr Rover.
 
 optional arguments:
     -h, --help                  Show this help message and exit.
@@ -271,11 +271,8 @@ Explanation of the arguments
     fastqs [fastqs ...]
 
         One or more pairs of FASTQ files containing reads for which variant
-        calling will be attempted. FASTQ.gz files are also accepted, though
-        they will cause Undr Rover to take longer to execute as time is 
-        required to decompress the files. It is highly recommended to decompress
-        the FASTQ.gz files yourself prior to using undr rover as it will be 
-        much faster. 
+        calling will be attempted. FASTQ.gz files will need to decompressed
+        prior to use with Undr Rover.
 
 --------------------------------------------------------------------------------
 Example usage (should all be on one line)

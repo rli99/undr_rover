@@ -379,39 +379,36 @@ def complete_blocks(args, blocks, fastq_pair):
         exit('Cannot deduce sample name from fastq filename {}'.\
             format(fastq_pair[0]))
     for fastq_file in fastq_pair:
-        if fastq_file.endswith(".gz"):
-            fastq_handle = gzip.open(fastq_file, "rb")
-        else:
-            fastq_handle = open(fastq_file, "rU")
-        for (title, seq, qual) in FastqGeneralIterator(fastq_handle):
-            # Each read is also stored as a dictionary.
-            read = {'name': title.partition(' ')[0], 'seq': seq}
-            read['qual'] = qual if args.qualthresh else []
-            # Try to match each read (check the first 20 bases) with an
-            # expected primer.
-            read_bases = read['seq']
-            primer_key = read_bases[:20]
-            if len(blocks.get(primer_key, [])) == 9:
-                # Possible forward primer matched.
-                fseq = blocks[primer_key][7]
-                if fseq == read_bases[:len(fseq)]:
-                    if read['name'] not in blocks[primer_key][3]:
-                        blocks[primer_key][3][read['name']] = [read, 0, \
-                        len(fseq), 0, sample]
-                    else:
-                        blocks[primer_key][3][read['name']][0] = read
-                        blocks[primer_key][3][read['name']][2] = len(fseq)
-            elif len(blocks.get(primer_key, [])) == 2:
-                # Possible reverse primer matched.
-                rseq = blocks[primer_key][0]
-                if rseq == read_bases[:len(rseq)]:
-                    forward_key = blocks[primer_key][1]
-                    if read['name'] not in blocks[forward_key][3]:
-                        blocks[forward_key][3][read['name']] = [0, read, 0, \
-                        len(rseq), sample]
-                    else:
-                        blocks[forward_key][3][read['name']][1] = read
-                        blocks[forward_key][3][read['name']][3] = len(rseq)
+        with open(fastq_file, "rU") as fastq:
+            for (title, seq, qual) in FastqGeneralIterator(fastq):
+                # Each read is also stored as a dictionary.
+                read = {'name': title.partition(' ')[0], 'seq': seq}
+                read['qual'] = qual if args.qualthresh else []
+                # Try to match each read (check the first 20 bases) with an
+                # expected primer.
+                read_bases = read['seq']
+                primer_key = read_bases[:20]
+                if len(blocks.get(primer_key, [])) == 9:
+                    # Possible forward primer matched.
+                    fseq = blocks[primer_key][7]
+                    if fseq == read_bases[:len(fseq)]:
+                        if read['name'] not in blocks[primer_key][3]:
+                            blocks[primer_key][3][read['name']] = [read, 0, \
+                            len(fseq), 0, sample]
+                        else:
+                            blocks[primer_key][3][read['name']][0] = read
+                            blocks[primer_key][3][read['name']][2] = len(fseq)
+                elif len(blocks.get(primer_key, [])) == 2:
+                    # Possible reverse primer matched.
+                    rseq = blocks[primer_key][0]
+                    if rseq == read_bases[:len(rseq)]:
+                        forward_key = blocks[primer_key][1]
+                        if read['name'] not in blocks[forward_key][3]:
+                            blocks[forward_key][3][read['name']] = [0, read, \
+                            0, len(rseq), sample]
+                        else:
+                            blocks[forward_key][3][read['name']][1] = read
+                            blocks[forward_key][3][read['name']][3] = len(rseq)
     # For the next stage, we only need the actual blocks.
     return [b[:5] for b in blocks.values() if len(b) > 2]
 
