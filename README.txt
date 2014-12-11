@@ -2,7 +2,7 @@
 UNDR ROVER - Unmapped primer directed read overlap variant caller
 --------------------------------------------------------------------------------
 
-Version: 0.1.0
+Version: 1.0.0
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~ Incomplete. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -25,6 +25,8 @@ Citation:
 
     <Citation>
 
+The following requirements can be installed by:
+    pip install -r REQUIREMENTS.txt
 Requirements: Python 2.7, and the PyVCF, Pyfaidx and Biopython libraries
 (https://pypi.python.org/pypi/biopython)
 (https://pypi.python.org/pypi/pyfaidx)
@@ -60,7 +62,7 @@ identification of any regions that may require further screening.
 Command Line Usage
 --------------------------------------------------------------------------------
 
-usage: undr_rover [-h] --primer_coords PRIMERS --primer_sequences SEQ
+usage: undr_rover [-h] [--version] --primer_coords COORDS --primer_sequences SEQ
                   [--kmer_length N] [--kmer_threshold] [--primer_bases N] 
                   [--proportionthresh N] [--absthresh N] [--qualthresh N] 
                   [--overlap OVERLAP] [--max_variants N] --reference FILE
@@ -73,7 +75,8 @@ positional arguments:
 
 optional arguments:
     -h, --help                  Show this help message and exit.
-    --primer_coords PRIMERS     Primer coordinates in TSV format.
+    --version                   Show the program's version number and exit.
+    --primer_coords COORDS      Primer coordinates in TSV format.
     --primer_sequences SEQ      Primer base sequences as determined by a primer
                                 generating program.
     --kmer_length N             Length of k-mer to use in k-mer test.
@@ -112,7 +115,11 @@ Explanation of the arguments
 
         Print a help message and exit.
 
-    --primer_coords PRIMERS
+    --version
+
+        Print the version number of rover and exit.
+
+    --primer_coords COORDS
 
         Required.
 

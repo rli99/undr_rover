@@ -8,6 +8,7 @@ from Bio.SeqIO.QualityIO import FastqGeneralIterator
 from itertools import takewhile
 from operator import itemgetter
 from pyfaidx import Fasta
+from version import undr_rover_version
 import csv
 import datetime
 import logging
@@ -30,6 +31,8 @@ def parse_args():
     """ Find variants from fastqs via a mapping-free approach."""
     parser = ArgumentParser(description="Find variants from fastqs via a \
         mapping-free approach.")
+    parser.add_argument('--version', action='version', version='%(prog)s ' \
+        + undr_rover_version)
     parser.add_argument('--primer_coords', type=str, required=True, \
         help='Primer coordinates in TSV format.')
     parser.add_argument('--primer_sequences', metavar='FILE', type=str, \
