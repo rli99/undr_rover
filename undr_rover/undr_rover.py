@@ -212,7 +212,6 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     distance from each other."""
     # If --thorough is set, any reads in which 2 SNVs are detected will undergo
     # a complete gapped alignment instead.
-    adj = False
     min_distance = len(insert_seq) if args.thorough else args.snvthresh
     check = min_distance
     pos -= args.primer_bases * direction
@@ -228,7 +227,7 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
         return (result, 0)
     if direction == -1 and insert == bases[-1 * len(insert_seq) + \
     args.primer_bases:-1 * args.primer_bases]:
-        return (result, 0)  
+        return (result, 0)
 
     kmer_stop = pos + args.kmer_length * direction
     count = 0
@@ -252,7 +251,6 @@ def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
                 if pos >= kmer_stop and direction == 1 or pos <= kmer_stop and \
                 direction == -1:
                     return (0, count)
-                adj = True
             result.append(SNV(chrsm, pos, [insert_seq[i], bases[i]], '.'))
             if args.qualthresh and ascii_to_phred(qual[i]) < args.qualthresh:
                 result[-1].filter_reason = ''.join([nts(result[-1].\

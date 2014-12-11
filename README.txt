@@ -4,10 +4,8 @@ UNDR ROVER - Unmapped primer directed read overlap variant caller
 
 Version: 1.0.0
 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~ Incomplete. ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Authors: Bernard J Pope (2,3), Tú Nguyen-Dumont (1), Daniel J Park (1) 
-         and Roger Li (2)
+Authors: Bernard J Pope (2,3), Tú Nguyen-Dumont (1), Fleur Hammet (1), 
+         Daniel J Park (1) and Roger Li (2)
 
          (1) Genetic Epidemiology Laboratory, Department of Pathology,
              The University of Melbourne.
@@ -25,12 +23,13 @@ Citation:
 
     <Citation>
 
-The following requirements can be installed by:
-    pip install -r REQUIREMENTS.txt
 Requirements: Python 2.7, and the PyVCF, Pyfaidx and Biopython libraries
 (https://pypi.python.org/pypi/biopython)
 (https://pypi.python.org/pypi/pyfaidx)
 (https://pypi.python.org/pypi/PyVCF)
+
+The above requirements can be installed by running:
+    pip install -r REQUIREMENTS.txt
 
 --------------------------------------------------------------------------------
 General Description
@@ -50,13 +49,13 @@ initially assume that all reads contain only single nucleotide variants. If
 we detect two single nucleotide variants in a row during this variant calling, 
 Undr Rover immediatly ceases this step and instead does a full gapped alignment 
 of the read against the reference insert sequence to detect possible insertions 
-and deletions.
+and deletions. 
 
 Only variants detected in both reads of a read-pair are considered relevant. 
 User-defined thresholds determine the minimum number and proportion of 
-read-pairs a variant must be observed in for a ‘call’ to be made. Undr Rover 
-additionally reports the depth of coverage across amplicons to facilitate the 
-identification of any regions that may require further screening.
+read-pairs a variant must be observed to be considered a 'PASS'. Coverage is 
+also reported for each block to allow for regions which require additional 
+screening to be easily identified.
 
 --------------------------------------------------------------------------------
 Command Line Usage
@@ -71,7 +70,7 @@ usage: undr_rover [-h] [--version] --primer_coords COORDS --primer_sequences SEQ
                   fastqs [fastqs ...]
 
 positional arguments:
-    fastqs                      FASTQ files containing reads
+    fastqs                      FASTQ files grouped in pairs
 
 optional arguments:
     -h, --help                  Show this help message and exit.
