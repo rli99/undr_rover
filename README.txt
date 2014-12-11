@@ -269,7 +269,9 @@ Explanation of the arguments
     fastqs [fastqs ...]
 
         One or more pairs of FASTQ files containing reads for which variant
-        calling will be attempted.
+        calling will be attempted. FASTQ.gz files are also accepted, though
+        they will cause Undr Rover to take longer to execute as time is 
+        required to gunzip the files.
 
 --------------------------------------------------------------------------------
 Example usage (should all be on one line)
