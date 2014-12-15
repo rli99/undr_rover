@@ -471,8 +471,13 @@ def process_blocks(args, blocks, id_info, vcf_file):
             # Consider variants each read in the pair share in common.
             for var in set(variants1).intersection(set(variants2)):
                 # Only consider variants within the bounds of the block.
-                if var.pos >= start and var.pos <= end:
-                    block_vars[var] = block_vars.get(var, 0) + 1
+                if isinstance(var, SNV):
+                    if var.pos >= start and var.pos <= end:
+                        block_vars[var] = block_vars.get(var, 0) + 1
+                elif isinstance(var, Insertion) or isinstance(var, Deletion):
+                    if var.pos >= start - max(len(var.ref()), len(var.alt())) \
+                    and var.pos <= end + max(len(var.ref()), len(var.alt())):
+                        block_vars[var] = block_vars.get(var, 0) + 1
 
         logging.info("Number of read pairs in block: {}".format(total_pairs))
         if kmer_fail > 0:
