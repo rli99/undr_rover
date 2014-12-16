@@ -146,7 +146,7 @@ Mon, 15 Dec 2014 17:04:22 Number of variants found in block: 0
 
 <p>Note that there are various optional command line arguments which can be used to alter the behaviour of Undr Rover. Further details on these can be found in the README on Undr Rover's <a href="https://github.com/rli99/undr_rover">GitHub page</a>.</p>
 
-<p>This assumes that there are two FASTQ files each for sample1* and sample2*, which contain the first and second reads respectively for each read-pair. Roverfile.txt and primers.txt are both TSV format files containing data as described earlier. </p>
+<p>This command line assumes that there are two FASTQ files each for sample1* and sample2*, which contain the first and second reads respectively for each read-pair. Roverfile.txt and primers.txt are both TSV format files containing data as described earlier. </p>
 
 <p>The variants called will be written to the file variant_calls.vcf. This file will report called variants in accordance with the VCF v4.2 specification outlined <a href="http://samtools.github.io/hts-specs/VCFv4.2.pdf">here</a>. Coverage files containing the number of read-pairs which mapped to each region will be output in coverage_files/sample1.coverage and coverage_files/sample2.coverage. A log file describing the actions taken by the program will be stored in log_file.</p>
         </section>
