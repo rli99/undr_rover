@@ -62,10 +62,10 @@ Command Line Usage
 --------------------------------------------------------------------------------
 
 usage: undr_rover [-h] [--version] --primer_coords COORDS --primer_sequences SEQ
-                  [--kmer_length N] [--kmer_threshold] [--primer_bases N] 
-                  [--proportionthresh N] [--absthresh N] [--qualthresh N] 
-                  [--overlap OVERLAP] [--max_variants N] --reference FILE
-                  [--id_info FILE] [--thorough] [--snvthresh N]
+                  [--primer_prefix_size N] [--kmer_length N] [--kmer_threshold] 
+                  [--primer_bases N] [--proportionthresh N] [--absthresh N] 
+                  [--qualthresh N] [--overlap OVERLAP] [--max_variants N] 
+                  --reference FILE [--id_info FILE] [--fast] [--snvthresh N]
                   --out FILE [--log FILE] [--coverdir COVERDIR]
                   fastqs [fastqs ...]
 
@@ -80,6 +80,7 @@ optional arguments:
     --primer_coords COORDS      Primer coordinates in TSV format.
     --primer_sequences SEQ      Primer base sequences as determined by a primer
                                 generating program.
+    --primer_prefix_size N 		Size of primer prefix in primer dictionary.
     --kmer_length N             Length of k-mer to use in k-mer test.
     --kmer_threshold N          Number of SNVs in k-mer region deemed 
                                 acceptable.
@@ -97,10 +98,11 @@ optional arguments:
                                 read is discarded. Defaults to 25.
     --reference FILE            Reference sequences in FASTA format.
     --id_info FILE              File containing rs ID information in vcf format.
-    --thorough                  If this parameter is set, gapped alignment will
-                                be used for all reads in which 2 or more SNVs
-                                are found. Defaults to False.
-    --snvthresh N               Only applicable if --thorough is not set. Gapped
+    --fast                  	If this parameter is set, gapped alignment will
+                                be used for fewer reads, leading to potentially 
+                                less accurate results but much faster run time. 
+                                Defaults to False. 
+    --snvthresh N               Only applicable if --fast is set. Gapped
                                 alignment will be used for reads which have 2 
                                 SNVs within N bases of each other. Defaults
                                 to 1. 
@@ -138,6 +140,14 @@ Explanation of the arguments
 
             primer_name sequence
 
+    --primer_prefix_size N
+
+        Optional. Defaults to 20. 
+
+    	Determines the size of the prefix used for the dictionary which stores 
+    	primers. Will most likely be set to a value equal to the minimum length 
+    	of a primer. 
+
     --kmer_length N
 
         Optional. Defaults to 30.
@@ -158,9 +168,15 @@ Explanation of the arguments
 
         Optional. Defaults to 3.
 
-        The number of additional bases from the primer regions to use with the
-        insert sequence to help with the gapped alignment near the edges of the
-        block. 
+        When there are repeated bases or repeated sequences of bases near the 
+        start of a block, detecting variants becomes slightly harder as some 
+        variants won't be apparent. By default, Undr Rover will use 3 additional 
+        bases from the end of the primer region during variant calling. This will 
+        help to detect those variants. 
+
+        Increasing the value of this parameter will mean more bases from the end 
+        of the primer region are used, leading to slightly improved accuracy at 
+        the cost of slower run time.  
 
     --proportionthresh N
 
@@ -238,20 +254,19 @@ Explanation of the arguments
         vcf format file containing rs numbers for known variants in .vcf.gz 
         format with an accompanying .tbi file (created by tabix).
 
-    --thorough
+    --fast
 
         Optional. Defaults to False.
 
-        If set, any reads which contain 2 or more SNVs will be
-        considered to possibly contain indels, and therefore gapped alignment
-        will be performed for those reads. Causes a noticeable slowdown in the
-        expected running time of Undr Rover.
+        If set, gapped alignment will only be used when SNVs are detected within 
+        snvthresh bases of each other. Leads to a significant decrease in the run 
+        time of Undr Rover. 
 
     --snvthresh N
 
         Optional. Defaults to 1.
 
-        If --thorough is not set, gapped alignment will be performed on reads
+        If --fast is set, gapped alignment will be performed on reads
         which contain SNVs within N bases of each other. The default setting
         of 1 allows for the fastest run-time and should provide a sufficient 
         level of accuracy in the majority of cases.
@@ -279,14 +294,15 @@ Example usage (should all be on one line)
 --------------------------------------------------------------------------------
 
 undr_rover.py   --primer_coords roverfile.txt --primer_sequences primers.txt 
-                --id_info dbsnp.vcf.gz --log log_file 
+                --id_info dbsnp.vcf.gz --log log_file --fast
                 --reference fasta/hg19bis.fa --out variant_calls.vcf 
                 --coverdir coverage_files sample1*.fastq sample2*.fastq
 
 This assumes that there are two FASTQ files each for sample1* and sample2*, 
 which contain the first and second reads respectively for each read-pair. 
 Roverfile.txt and primers.txt are both TSV format files containing data as 
-described earlier. 
+described earlier. The --fast flag is also set to decrease the run time
+of Undr Rover. 
 
 The variants called will be written to the file variant_calls.vcf. Coverage 
 files containing the number of read-pairs which mapped to each region will be 

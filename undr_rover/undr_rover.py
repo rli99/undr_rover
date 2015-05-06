@@ -23,8 +23,10 @@ DEFAULT_KMER_LENGTH = 30
 DEFAULT_MAX_VARIANTS = 20
 DEFAULT_MINIMUM_READ_OVERLAP_BLOCK = 0.9
 DEFAULT_PRIMER_BASES = 5
+DEFAULT_PRIMER_PREFIX_SIZE = 20
 DEFAULT_PROPORTION_THRESHOLD = 0.05
 DEFAULT_SNV_THRESHOLD = 1
+DEFAULT_FAST_SETTING = False
 OUTPUT_HEADER = '\t'.join(["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", \
     "FILTER", "INFO"])
 
@@ -39,6 +41,9 @@ def parse_args():
     parser.add_argument('--primer_sequences', metavar='FILE', type=str, \
         required=True, help='Primer base sequences as determined by a primer \
         generating program.')
+    parser.add_argument('--primer_prefix_size', type=int, \
+    	default=DEFAULT_PRIMER_PREFIX_SIZE, \
+    	help='Size of primer key for blocks in dictionary.')
     parser.add_argument('--kmer_length', type=int, \
         default=DEFAULT_KMER_LENGTH, \
         help='Length of k-mer to check after the primer sequence.' \
@@ -81,8 +86,9 @@ def parse_args():
     parser.add_argument('--coverdir', \
         help='Directory to write coverage files, defaults to current working \
         directory.')
-    parser.add_argument('--thorough', action='store_true', default=False, \
-        help='Use gapped alignment more often.')
+    parser.add_argument('--fast', action='store_true', \
+    	default=DEFAULT_FAST_SETTING, \
+        help='Use gapped alignment less often, leading to faster run time.')
     parser.add_argument('--snvthresh', metavar='N', type=int, \
         default=DEFAULT_SNV_THRESHOLD, \
         help='Distance between two single nucleotide variants before going to \
@@ -211,9 +217,9 @@ def reverse_complement(sequence):
 def read_snvs(args, chrsm, qual, pos, insert_seq, bases, direction):
     """ Find all the SNVs in a read. 0 if we find two SNVs within a certain
     distance from each other."""
-    # If --thorough is set, any reads in which 2 SNVs are detected will undergo
+    # If --fast is not set, any reads in which 2 SNVs are detected will undergo
     # a complete gapped alignment instead.
-    min_distance = len(insert_seq) if args.thorough else args.snvthresh
+    min_distance = len(insert_seq) if not args.fast else args.snvthresh
     check = min_distance
     pos -= args.primer_bases * direction
     result = []
@@ -353,17 +359,18 @@ def initialise_blocks(args):
         # variant calling near the edges of the block.
         ref_sequence = reference[block[0]][int(block[1]) - 1 - \
         args.primer_bases:int(block[2]) + args.primer_bases]
-        # Actual block, for which the key is the first 20 bases of the forward
-        # primer. Value contains [chr, start, end, {reads}, insert_seq, forward
-        # primer name, reverse primer name, forward primer sequence, reverse
-        # primer sequence]
-        blocks[primer_sequences[block[3]][:20]] = [block[0], block[1], \
-        block[2], {}, str(ref_sequence), block[3], block[4], \
-        primer_sequences[block[3]], primer_sequences[block[4]]]
+        # Actual block, for which the key is a certain number of bases of the 
+        # forward primer, depending on an input parameter to the program. Value 
+        # contains [chr, start, end, {reads}, insert_seq, forward primer name, 
+        # reverse primer name, forward primer sequence, reverse primer sequence]
+        blocks[primer_sequences[block[3]][:args.primer_prefix_size]] = \
+        [block[0], block[1], block[2], {}, str(ref_sequence), block[3], \
+        block[4], primer_sequences[block[3]], primer_sequences[block[4]]]
         # Reverse primer (not an actual block), contains the key for the forward
         # primer. Redirects to forward primer block.
-        blocks[primer_sequences[block[4]][:20]] = [primer_sequences[block[4]], \
-        primer_sequences[block[3]][:20]]
+        blocks[primer_sequences[block[4]][:args.primer_prefix_size]] = \
+        [primer_sequences[block[4]], \
+        primer_sequences[block[3]][:args.primer_prefix_size]]
     return blocks
 
 def complete_blocks(args, blocks, fastq_pair):
@@ -384,10 +391,9 @@ def complete_blocks(args, blocks, fastq_pair):
                 # Each read is also stored as a dictionary.
                 read = {'name': title.partition(' ')[0], 'seq': seq}
                 read['qual'] = qual if args.qualthresh else []
-                # Try to match each read (check the first 20 bases) with an
-                # expected primer.
+                # Try to match each read with an expected primer.
                 read_bases = read['seq']
-                primer_key = read_bases[:20]
+                primer_key = read_bases[:args.primer_prefix_size]
                 if len(blocks.get(primer_key, [])) == 9:
                     # Possible forward primer matched.
                     fseq = blocks[primer_key][7]
